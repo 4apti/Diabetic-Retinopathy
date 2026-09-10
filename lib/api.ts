@@ -135,6 +135,33 @@ export interface ModelInfo {
   note: string
 }
 
+export interface LesionSummaryItem {
+  type: string
+  count: number
+  avg_confidence: number | null
+}
+
+export interface StructuredFindings {
+  icdr_grade: number | null
+  icdr_grade_label: string
+  lesion_summary: LesionSummaryItem[]
+  total_lesion_count: number
+  consistency_status: string
+  flagged_reason: string | null
+  model_version: string | null
+}
+
+export interface ScreeningReport {
+  image_id: string
+  report_text: string
+  structured_findings: StructuredFindings
+  region_notes: string | null
+  gradcam_path: string | null
+  generation_method: "template" | "llm"
+  model_version: string | null
+  generated_at: string | null
+}
+
 export const authApi = {
   login: (email: string, password: string) =>
     apiFetch<TokenResponse>("/auth/login", {
@@ -174,6 +201,30 @@ export const dashboardApi = {
   reviewQueue: (token: string) =>
     apiFetch<ReviewQueueItem[]>("/review-queue", {}, token),
   models: (token: string) => apiFetch<ModelInfo[]>("/models", {}, token),
+}
+
+export const reportsApi = {
+  get: (token: string, imageId: string) =>
+    apiFetch<ScreeningReport>(`/reports/${imageId}`, {}, token),
+  gradcamUrl: (imageId: string) =>
+    `${API_BASE_URL}/reports/${imageId}/gradcam`,
+}
+
+/**
+ * Fetches the stored Grad-CAM heatmap as a blob and returns an object URL.
+ * The served endpoint is bearer-auth protected, so it cannot be <img>-tagged
+ * directly without a token.
+ */
+export async function fetchGradcamBlobUrl(
+  imageId: string,
+  token: string,
+): Promise<string | null> {
+  const response = await fetch(reportsApi.gradcamUrl(imageId), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) return null
+  const blob = await response.blob()
+  return URL.createObjectURL(blob)
 }
 
 export function scanImageUrl(imageId: string): string {

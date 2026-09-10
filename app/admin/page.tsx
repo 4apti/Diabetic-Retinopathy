@@ -15,13 +15,14 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
-import { isReviewItem } from "@/lib/consistency"
+import { findingBadgeTone, isReviewItem } from "@/lib/consistency"
 import {
   type ReviewQueueItem,
   type RoleStats,
   dashboardApi,
 } from "@/lib/api"
 import { useSession } from "@/lib/session"
+import { ScreeningReportPanel } from "@/components/reports/report-panel"
 import { Info } from "lucide-react"
 
 const gradeLabels = ["No DR", "Mild", "Moderate", "Severe", "Proliferative"]
@@ -178,6 +179,52 @@ function AdminOverview() {
       <h2 className="mt-2 font-heading text-lg font-semibold">Recent scans</h2>
       {queue && queue.length === 0 && (
         <p className="text-sm text-muted-foreground">No scans uploaded yet.</p>
+      )}
+
+      <h2 className="mt-6 font-heading text-lg font-semibold">
+        Clinical reports (Phase 3)
+      </h2>
+      <p className="mb-3 text-sm text-muted-foreground">
+        Full explainable screening reports for recent scans — plain-language
+        text, the Grad-CAM heatmap, and the underlying structured findings for
+        review. Printable via the in-report button.
+      </p>
+      {queue === null ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Spinner size="sm" /> Loading reports&hellip;
+        </div>
+      ) : queue.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          No completed analyses yet.
+        </p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {queue.map((item) => (
+            <details
+              key={item.image_id}
+              className="rounded-lg border bg-card p-3"
+            >
+              <summary className="flex cursor-pointer items-center justify-between gap-3 text-sm">
+                <span>
+                  <strong>{item.patient_name}</strong>{" "}
+                  <span className="text-muted-foreground">
+                    grade {item.icdr_grade ?? "—"} · #{item.image_id.slice(0, 6)}
+                  </span>
+                </span>
+                <Badge tone={findingBadgeTone(item.consistency_status)}>
+                  {item.consistency_status}
+                </Badge>
+              </summary>
+              <div className="mt-3">
+                <ScreeningReportPanel
+                  imageId={item.image_id}
+                  token={token ?? ""}
+                  variant="clinical"
+                />
+              </div>
+            </details>
+          ))}
+        </div>
       )}
     </DashboardShell>
   )

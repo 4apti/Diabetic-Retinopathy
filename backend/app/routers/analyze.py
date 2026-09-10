@@ -7,9 +7,10 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user
-from ..ml.consistency import check_consistency
+from ..ml.consistency import CLASSIFIER_ONLY, check_consistency
 from ..ml.preprocessing import preprocess_image
 from ..ml.registry import registry
+from ..ml.reports import ensure_report, model_signature
 from ..models import AIFinding, ImageUpload, User
 from ..schemas import FindingOut
 from PIL import Image
@@ -63,7 +64,7 @@ def analyze_image(
         if registry.detector is not None:
             consistency = check_consistency(lesion_counts, cls_result.grade)
         else:
-            consistency = "Classifier only"
+            consistency = CLASSIFIER_ONLY
 
         provenance = {
             "classifier": {
@@ -85,9 +86,24 @@ def analyze_image(
         finding.consistency_status = consistency
         finding.analysis_status = "completed"
         finding.model_provenance = json.dumps(provenance)
+        finding.model_version = model_signature(registry.classifier)
         finding.error = None
         finding.analyzed_at = datetime.utcnow()
         db.commit()
+
+        # Phase 3 — build the explainable report (Grad-CAM + NLG) automatically.
+        # Never let a report failure fail the analysis response.
+        try:
+            ensure_report(db, finding)
+        except Exception as exc:  # noqa: BLE001
+            import logging
+
+            logging.getLogger("netrascan.analyze").warning(
+                "Report generation failed for %s (analysis itself succeeded): %s",
+                image_id,
+                exc,
+            )
+
         return FindingOut.model_validate(finding)
 
     except Exception as exc:  # noqa: BLE001 — surface as a failed analysis honestly

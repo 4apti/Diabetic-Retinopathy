@@ -24,6 +24,7 @@ import {
 } from "@/lib/api"
 import { useSession } from "@/lib/session"
 import { findingBadgeTone } from "@/lib/consistency"
+import { ScreeningReportPanel } from "@/components/reports/report-panel"
 import { Info } from "lucide-react"
 
 function parseLesions(raw: string | { type: string; count: number }[]): {
@@ -185,16 +186,26 @@ function FindingPanel({ finding, token }: { finding: FindingOut; token: string }
           <ModelProvenanceNote raw={finding.model_provenance} />
         )}
 
-        <div className="mt-4 rounded-lg border border-dashed p-3 opacity-70">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Phase 3 &amp; beyond — Coming Next
-          </p>
-          <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs text-muted-foreground">
-            <li>Grad-CAM heatmaps — visual explanations of the severity decision</li>
-            <li>Plain-language report generation (NLG)</li>
-            <li>Telemedicine / doctor sign-off dashboard and ABDM sync</li>
-          </ul>
-        </div>
+        {finding.analysis_status === "completed" && (
+          <div className="mt-4">
+            <h3 className="mb-2 font-heading text-sm font-semibold">
+              Your explainable screening report
+            </h3>
+            <ScreeningReportPanel imageId={finding.image_id} token={token ?? ""} variant="patient" />
+          </div>
+        )}
+
+        {finding.analysis_status === "completed" && (
+          <div className="mt-4 rounded-lg border border-dashed p-3 opacity-70">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Phase 4 &amp; beyond — Coming Next
+            </p>
+            <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+              <li>Telemedicine / doctor sign-off dashboard and ABDM sync</li>
+              <li>Local-language and voice report output</li>
+            </ul>
+          </div>
+        )}
 
         {finding.analysis_status === "queued" && (
           <p className="text-sm text-muted-foreground">

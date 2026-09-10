@@ -106,4 +106,16 @@ class ModelInfo(BaseModel):
     note: str
 
 
+# ---------- Phase 3 — Explainable reports ----------
+class ReportOut(BaseModel):
+    image_id: str
+    report_text: str
+    structured_findings: dict[str, Any] = {}
+    region_notes: Optional[str] = None
+    gradcam_path: Optional[str] = None
+    generation_method: str = "template"
+    model_version: Optional[str] = None
+    generated_at: Optional[datetime] = None
+
+
 TokenResponse.model_rebuild()

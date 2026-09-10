@@ -85,7 +85,35 @@ class AIFinding(Base):
     consistency_status = Column(String, default="pending")  # Consistent | Flagged for Review
     analysis_status = Column(String, default="queued")  # queued | running | completed | failed
     model_provenance = Column(Text, default="{}")  # JSON describing engines used
+    model_version = Column(String, nullable=True)  # engine signature used for this analysis
     error = Column(Text, nullable=True)
     analyzed_at = Column(DateTime, nullable=True)
 
     image = relationship("ImageUpload", back_populates="findings")
+    report = relationship("ScreeningReport", back_populates="finding", uselist=False)
+
+
+class ScreeningReport(Base):
+    """Phase 3 — explainable AI screening report, generated once and cached.
+
+    Persisted so the Grad-CAM heatmap and the plain-language report are not
+    regenerated on every page view. Invalidated by a model_version mismatch: if
+    the image is re-analyzed with a different engine signature the report is
+    rebuilt in place.
+    """
+
+    __tablename__ = "screening_reports"
+
+    id = Column(Integer, primary_key=True, index=True)
+    image_id = Column(
+        String, ForeignKey("ai_findings.image_id"), unique=True, index=True, nullable=False
+    )
+    report_text = Column(Text, nullable=False)
+    structured_findings = Column(Text, default="{}")  # JSON — clinician-facing object
+    region_notes = Column(Text, nullable=True)  # image-relative quadrant activation
+    gradcam_path = Column(String, nullable=True)  # null when heatmap computation failed
+    generation_method = Column(String, default="template")  # template | llm
+    model_version = Column(String, nullable=True)
+    generated_at = Column(DateTime, default=datetime.utcnow)
+
+    finding = relationship("AIFinding", back_populates="report")

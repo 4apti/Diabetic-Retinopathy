@@ -1,0 +1,101 @@
+"""Phase 3 — access-controlled report + heatmap endpoints.
+
+Server-side ownership enforcement is mandatory here: a patient may only fetch
+reports for their own scans (never trusted solely to the frontend). Reports for
+a completed finding that have not yet been generated are produced on demand.
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
+from sqlalchemy.orm import Session
+
+from ..database import get_db
+from ..deps import get_current_user
+from ..ml.reports import ensure_report
+from ..models import AIFinding, Patient, ScreeningReport, User
+from ..schemas import ReportOut
+
+router = APIRouter(prefix="/reports", tags=["reports"])
+
+CLINICAL_ROLES = ("admin", "doctor", "health_worker")
+
+
+def _get_accessible_upload(db: Session, user: User, image_id: str):
+    from ..models import ImageUpload
+
+    upload = db.query(ImageUpload).filter(ImageUpload.image_id == image_id).first()
+    if upload is None:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    if user.role not in CLINICAL_ROLES:
+        patient = db.query(Patient).filter(Patient.id == upload.patient_id).first()
+        if patient is None or patient.own_user_id != user.id:
+            raise HTTPException(
+                status_code=403,
+                detail="You do not have permission to view this report",
+            )
+    return upload
+
+
+@router.get("/{image_id}", response_model=ReportOut)
+def get_report(
+    image_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _get_accessible_upload(db, user, image_id)
+
+    report = (
+        db.query(ScreeningReport).filter(ScreeningReport.image_id == image_id).first()
+    )
+    if report is None:
+        # Lazy generation: a completed finding should always produce a report.
+        finding = (
+            db.query(AIFinding).filter(AIFinding.image_id == image_id).first()
+        )
+        if finding is None or finding.analysis_status != "completed":
+            raise HTTPException(status_code=404, detail="No report available yet")
+        report = ensure_report(db, finding)
+        if report is None:
+            raise HTTPException(status_code=404, detail="Report could not be generated")
+
+    try:
+        structured = json.loads(report.structured_findings or "{}")
+    except json.JSONDecodeError:
+        structured = {}
+
+    return ReportOut(
+        image_id=report.image_id,
+        report_text=report.report_text,
+        structured_findings=structured,
+        region_notes=report.region_notes,
+        gradcam_path=report.gradcam_path,
+        generation_method=report.generation_method,
+        model_version=report.model_version,
+        generated_at=report.generated_at,
+    )
+
+
+@router.get("/{image_id}/gradcam")
+def get_gradcam(
+    image_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    _get_accessible_upload(db, user, image_id)
+
+    report = (
+        db.query(ScreeningReport).filter(ScreeningReport.image_id == image_id).first()
+    )
+    path = report.gradcam_path if report is not None else None
+    if not path:
+        raise HTTPException(status_code=404, detail="Heatmap unavailable")
+    p = Path(path)
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="Heatmap file is missing")
+    return FileResponse(p, media_type="image/png", filename=f"{image_id}_gradcam.png")

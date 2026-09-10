@@ -30,6 +30,23 @@ def preprocess_image(image: Image.Image, size: int = 380) -> np.ndarray:
     fast denoise -> normalize. Uses OpenCV when installed (recommended) and
     falls back to PIL+numpy otherwise.
     """
+    img_pp = _make_display_image(image, size)
+    arr = img_pp.astype(np.float32) / 255.0
+    arr = (arr - IMAGE_MEAN[:, None, None]) / IMAGE_STD[:, None, None]
+    return arr.astype(np.float32)
+
+
+def preprocess_image_display(image: Image.Image, size: int = 380) -> np.ndarray:
+    """Return the HWC uint8 display image the model actually saw (crop -> resize
+    -> CLAHE -> denoise, WITHOUT the final ImageNet normalization).
+
+    Used by Grad-CAM so the heatmap overlay aligns pixel-for-pixel with the
+    preprocessed fundus image fed to the classifier.
+    """
+    return _make_display_image(image, size)
+
+
+def _make_display_image(image: Image.Image, size: int) -> np.ndarray:
     img = _square_center_crop(image.convert("RGB"))
     img = img.resize((size, size), Image.BILINEAR)
 
@@ -38,9 +55,9 @@ def preprocess_image(image: Image.Image, size: int = 380) -> np.ndarray:
     else:
         arr = _preprocess_pil(img)
 
-    arr = arr.astype(np.float32) / 255.0
-    arr = (arr - IMAGE_MEAN[:, None, None]) / IMAGE_STD[:, None, None]
-    return arr.astype(np.float32)
+    # (3, H, W) float -> (H, W, 3) uint8
+    arr = np.transpose(arr, (1, 2, 0))
+    return np.clip(arr, 0, 255).astype(np.uint8)
 
 
 def _square_center_crop(img: Image.Image) -> Image.Image:

@@ -1,9 +1,11 @@
 # NetraScan — Automated DR Analysis & Explainable Diagnostic Platform
 
 AI-powered diabetic retinopathy (DR) screening prototype for rural Primary Health
-Centres. **Phase 1** (capture + quality gate + role auth) and **Phase 2** (real
-trained models + dual-engine analysis + provenance) are implemented; Grad-CAM,
-NLG reports and telemedicine remain locked "Coming Next" stubs.
+Centres. **Phase 1** (capture + quality gate + role auth), **Phase 2** (real
+trained models + dual-engine analysis + provenance) and **Phase 3** (real
+Grad-CAM explainability + structured findings + plain-language reports) are
+implemented; telemedicine, ABDM sync, offline store-and-forward and
+local-language output remain locked "Coming Next" stubs (Phase 4).
 
 ---
 
@@ -86,6 +88,45 @@ python backend/prepare_demo_samples.py --data-dir path/to/aptos2019
 
 `python -m app.seed` also populates demo patients/scans/findings so the admin
 dashboard and doctor review queue are never empty on first load.
+
+## Phase 3 — Explainable AI & screening reports
+
+Every completed Phase 2 analysis automatically produces (and caches in the
+`screening_reports` table):
+
+- **Real Grad-CAM heatmap** computed against the actual trained
+  `efficientnet_b0_dr.pt` checkpoint (manual forward/backward hooks on
+  `features[-1]`; 5-class head targets the predicted grade, ordinal head the
+  raw severity score). The CAM is overlaid pixel-for-pixel on the preprocessed
+  image the model actually saw. Generated once, then served from storage
+  (`uploads/reports/{image_id}_gradcam.png`) — never regenerated per page view.
+  **Failure handling**: OOM / hook / checkpoint errors are caught; the pipeline
+  continues with `gradcam_path = null` and the UI shows "Heatmap unavailable".
+  Backfill/re-verify a batch with `python backend/generate_reports.py --force`
+  (this also runs automatically after classifier training finishes).
+- **Structured clinical findings** — a restructuring of the `ai_findings` row
+  (ICDR grade + label, lesion summary, total count, consistency status,
+  flagged reason, engine `model_version`), served to the admin/clinical view.
+- **Plain-language report (template NLG)** — deterministic, fully offline
+  (Option A in the spec), patient-friendly wording with a severity-appropriate
+  next step. Follow-up recommendation thresholds follow the ICDR severity scale
+  and the AAO Diabetic Retinopathy Preferred Practice Pattern (2019): No DR →
+  ~12 months, Mild → 6–12 months, Moderate → ~6 months, Severe → prompt
+  referral, Proliferative → urgent referral. A clinical disclaimer is embedded
+  **in the report text itself** so it survives printing/sharing.
+
+**Invalidation**: reports are keyed to the engine `model_version`
+(`efficientnet_b0_dr:<validation_qwk>`). If an image is re-analyzed or the
+checkpoint is updated, the stored report is regenerated rather than left stale.
+
+**Limitations disclosed**: Phase 1's capture flow does not record the eye
+(OD/OS), so `region_notes` uses *image-relative* quadrants ("upper-left region
+of the image"), never anatomical terms — noted in the admin Model Info panel.
+Report text is English-only (Phase 4 adds local-language output, kept decoupled
+from the template engine).
+
+**Report export**: copy/print from the browser via the in-report print button
+and a print stylesheet (PDF export is a planned stretch goal).
 
 ## Provenance & clinical disclaimer
 

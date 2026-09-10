@@ -37,6 +37,7 @@ def lesion_severity_band(lesion_counts: dict[str, int]) -> tuple[int, int]:
 CONSISTENT = "Consistent"
 FLAGGED = "Flagged for Review"
 LOW_LESION_EVIDENCE = "Review - Low Lesion Evidence"
+CLASSIFIER_ONLY = "Classifier only"
 
 
 def check_consistency(

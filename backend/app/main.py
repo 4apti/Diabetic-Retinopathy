@@ -7,25 +7,25 @@ from . import models  # noqa: F401 — ensure ORM models are registered
 from .config import settings
 from .database import Base, engine
 from .ml.registry import registry
-from .routers import analyze, auth, dashboard, patients, uploads
+from .routers import analyze, auth, dashboard, patients, reports, uploads
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
-    # Lightweight additive migration for existing SQLite DBs.
+    # Lightweight additive migrations for existing SQLite DBs.
     from sqlalchemy import text
 
     with engine.connect() as conn:
-        try:
-            conn.execute(
-                text(
-                    "ALTER TABLE image_uploads ADD COLUMN retake_count INTEGER DEFAULT 0"
-                )
-            )
-            conn.commit()
-        except Exception:
-            pass  # column already exists
+        for stmt in (
+            "ALTER TABLE image_uploads ADD COLUMN retake_count INTEGER DEFAULT 0",
+            "ALTER TABLE ai_findings ADD COLUMN model_version VARCHAR DEFAULT NULL",
+        ):
+            try:
+                conn.execute(text(stmt))
+            except Exception:
+                pass  # column already exists
+        conn.commit()
     registry.load()
     yield
 
@@ -50,7 +50,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for router in (auth.router, patients.router, uploads.router, analyze.router, dashboard.router):
+for router in (auth.router, patients.router, uploads.router, analyze.router, dashboard.router, reports.router):
     app.include_router(router, prefix=settings.api_prefix)
 
 
