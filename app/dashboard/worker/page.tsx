@@ -27,6 +27,7 @@ import {
 import { useSession } from "@/lib/session"
 import { cn } from "cn"
 import { Info, ScanLine, UploadCloud } from "lucide-react"
+import { findingBadgeTone } from "@/lib/consistency"
 
 const gradeLabels = ["No DR", "Mild", "Moderate", "Severe", "Proliferative"]
 
@@ -64,6 +65,11 @@ function ModelProvenanceNote({ finding }: { finding: FindingOut }) {
           diagnosis.
         </li>
       </ul>
+      <p className="mt-3 border-t pt-2 font-medium">
+        NetraScan is a decision-support prototype, not a certified diagnostic
+        device. Results must be reviewed by a qualified ophthalmologist before
+        any clinical decision.
+      </p>
     </div>
   )
 }
@@ -307,7 +313,9 @@ function ScanWorkflow({ patient }: { patient: PatientOut }) {
                 ? "Quality pending"
                 : qualityOk
                   ? "Clear capture"
-                  : "Poor quality — retake advised"}
+                  : (upload.retake_count ?? 0) >= 3
+                    ? "Retake #" + (upload.retake_count ?? 0) + " — check the lens/camera setup"
+                    : "Poor quality — retake advised"}
             </Badge>
             {upload.quality_score !== null && (
               <span className="text-xs text-muted-foreground">
@@ -350,11 +358,7 @@ function ScanWorkflow({ patient }: { patient: PatientOut }) {
                   Consistency
                 </p>
                 <Badge
-                  tone={
-                    finding.consistency_status === "Consistent"
-                      ? "success"
-                      : "destructive"
-                  }
+                  tone={findingBadgeTone(finding.consistency_status)}
                 >
                   {finding.consistency_status}
                 </Badge>

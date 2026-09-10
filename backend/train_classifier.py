@@ -15,7 +15,9 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
+import subprocess
 import sys
 import threading
 import zipfile
@@ -37,6 +39,42 @@ from tqdm import tqdm
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from app.config import settings
 from app.ml.preprocessing import preprocess_image
+
+
+def _git_commit() -> str:
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return out.stdout.strip() or "unknown"
+    except Exception:
+        return "unknown"
+
+
+def checkpoint_metadata(epoch: int, val_qwk: float, samples: int, input_size: int) -> dict:
+    """Metadata written to efficientnet_b0_dr_meta.json (also embedded in .pt)."""
+    return {
+        "trained_on": "APTOS 2019 Blindness Detection",
+        "architecture": "efficientnet_b0",
+        "input_size": input_size,
+        "best_epoch": epoch,
+        "validation_qwk": round(val_qwk, 4),
+        "validation_metric_definition": (
+            "Quadratic Weighted Kappa (QWK) on the stratified 15% validation split"
+        ),
+        "confidence_definition": "Softmax probability of the predicted ICDR grade",
+        "samples": int(samples),
+        "training_date": datetime.date.today().isoformat(),
+        "git_commit": _git_commit(),
+    }
+
+
+def write_meta_json(out_path: Path, meta: dict) -> None:
+    meta_path = out_path.with_suffix(".meta.json")
+    meta_path.write_text(json.dumps(meta, indent=2))
 
 
 class AptosDataset(Dataset):
@@ -265,25 +303,18 @@ def main() -> int:
                 best_qwk = val_qwk
                 best_epoch = epoch
                 best_state = {k: v.cpu().clone() for k, v in model.state_dict().items()}
+                meta = checkpoint_metadata(epoch, val_qwk, len(train_df), args.input_size)
                 out_path = Path(args.out)
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 torch.save(
                     {
                         "model_state": best_state,
                         "out_features": 5,
-                        "meta": {
-                            "trained_on": "APTOS 2019 Blindness Detection",
-                            "architecture": "efficientnet_b0",
-                            "input_size": args.input_size,
-                            "epochs": epoch,
-                            "best_epoch": epoch,
-                            "validation_qwk": round(best_qwk, 4),
-                            "validation_accuracy": None,
-                            "samples": int(len(train_df)),
-                        },
+                        "meta": meta,
                     },
                     out_path,
                 )
+                write_meta_json(out_path, meta)
                 print(f"   [checkpoint saved -> {out_path}]", flush=True)
 
         if best_state is None:
@@ -292,23 +323,16 @@ def main() -> int:
 
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
+        meta = checkpoint_metadata(best_epoch, best_qwk, len(train_df), args.input_size)
         torch.save(
             {
                 "model_state": best_state,
                 "out_features": 5,
-                "meta": {
-                    "trained_on": "APTOS 2019 Blindness Detection",
-                    "architecture": "efficientnet_b0",
-                    "input_size": args.input_size,
-                    "epochs": best_epoch,
-                    "best_epoch": best_epoch,
-                    "validation_qwk": round(best_qwk, 4),
-                    "validation_accuracy": None,
-                    "samples": int(len(train_df)),
-                },
+                "meta": meta,
             },
             out,
         )
+        write_meta_json(out, meta)
         print(f"Saved best checkpoint (epoch {best_epoch}, QWK {best_qwk:.4f}) -> {out}")
         return 0
     finally:

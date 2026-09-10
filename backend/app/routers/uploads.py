@@ -14,7 +14,8 @@ from ..schemas import UploadOut
 
 router = APIRouter(prefix="/uploads", tags=["uploads"])
 
-ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg", ".bmp", ".tif", ".tiff"}
+ALLOWED_EXTENSIONS = {".png", ".jpg", ".jpeg"}
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # 10 MB per Phase 1 spec
 
 
 @router.post("", response_model=UploadOut, status_code=201)
@@ -35,6 +36,24 @@ def upload_image(
     image_bytes = file.file.read()
     if not image_bytes:
         raise HTTPException(status_code=400, detail="Empty file")
+    if len(image_bytes) > MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large — maximum is {MAX_UPLOAD_BYTES // (1024 * 1024)} MB",
+        )
+
+    # Reject corrupted/unreadable images before they reach preprocessing.
+    from io import BytesIO
+
+    from PIL import Image
+
+    try:
+        with Image.open(BytesIO(image_bytes)) as probe:
+            probe.verify()
+    except Exception as exc:  # noqa: BLE001 — malformed files must not crash
+        raise HTTPException(
+            status_code=400, detail="Image file is corrupted or unreadable"
+        ) from exc
 
     quality = assess_quality(image_bytes)
 
@@ -54,6 +73,22 @@ def upload_image(
         quality_status=quality["status"],
         quality_score=quality["blur_score"],
     )
+
+    # Consecutive-retake tracking per Phase 1 spec: a failed attempt resets only
+    # when an acceptable capture arrives; the lens/camera hint surfaces at >= 3.
+    prev = (
+        db.query(ImageUpload)
+        .filter(ImageUpload.patient_id == patient.id)
+        .order_by(ImageUpload.uploaded_at.desc())
+        .first()
+    )
+    if quality["status"] == "poor":
+        upload.retake_count = (
+            prev.retake_count + 1 if prev is not None and prev.quality_status == "poor" else 1
+        )
+    else:
+        upload.retake_count = 0
+
     db.add(upload)
     db.commit()
     db.refresh(upload)

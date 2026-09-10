@@ -1,36 +1,122 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# NetraScan — Automated DR Analysis & Explainable Diagnostic Platform
 
-## Getting Started
+AI-powered diabetic retinopathy (DR) screening prototype for rural Primary Health
+Centres. **Phase 1** (capture + quality gate + role auth) and **Phase 2** (real
+trained models + dual-engine analysis + provenance) are implemented; Grad-CAM,
+NLG reports and telemedicine remain locked "Coming Next" stubs.
 
-First, run the development server:
+---
+
+## Quick start
+
+Requirements: **Python 3.13.1**, **Node 20+ (developed on v25.8.2)**.
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# 1. Frontend
+npm install
+npm run build
+
+# 2. Backend (from backend/)
+python -m venv .venv  # outside backend/, at repo root
+pip install -r backend/requirements.txt -r backend/requirements-ml.txt
+python -m app.seed                      # demo users, patients, demo scans
+uvicorn app.main:app --host 127.0.0.1 --port 8000
+
+# 3. Run
+npm start            # http://localhost:3000  (API at :8000)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Demo accounts
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+| Role | Email | Password |
+|---|---|---|
+| Admin | `admin@netrascan.in` | `Admin123!` |
+| Patient | `patient@example.org` | `Patient123!` |
+| Health worker | `worker@example.org` | `Worker123!` |
+| Doctor | `doctor@example.org` | `Doctor123!` |
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+> Auth note: Phase 1's prompt specified phone + mocked-OTP login. NetraScan v2
+> ships email + password with bcrypt hashing and an in-memory login rate limiter
+> (10 attempts / 15 min per IP). The mocked-OTP flow was intentionally *not*
+> implemented — the UI and API are honest about this rather than faking SMS.
 
-## Learn More
+## Quality gate
 
-To learn more about Next.js, take a look at the following resources:
+Real checks, tuned on the APTOS 2019 training set:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- **Blur**: variance-of-Laplacian, computed on a fixed **500 px** downscale so the
+  metric is resolution-independent. Threshold **15.0** — APTOS sharp fundus
+  photos median ~30 (p25 ≈ 21), deliberately blurred captures score < 15.
+- **Fundus plausibility**: red-channel dominance (`< 0.32` → "may not be fundus")
+  and dark-periphery fraction (`< 0.24` → "no dark periphery") produce warnings.
+- **Recapture flow**: failed captures increment `retake_count`; after 3
+  consecutive failures the UI suggests checking the lens/camera setup.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Datasets & models
 
-## Deploy on Vercel
+- **Engine B — DR severity (0–4 ICDR)**: `EfficientNet-B0` fine-tuned on
+  **APTOS 2019 Blindness Detection** (3,662 images), weighted CrossEntropyLoss
+  (inverse class frequency), stratified 85/15 validation split seeded at 42,
+  checkpoint selected on **Quadratic Weighted Kappa**. Confidence = softmax
+  probability of the predicted grade. Tensor preprocessing (center-crop 380 →
+  CLAHE → denoise → ImageNet normalize) is shared byte-for-byte between
+  training and inference (`verify_preprocessing_parity.py` proves it).
+- **Engine A — lesion detection**: `YOLOv8n` fine-tuned on **IDRiD**
+  (microaneurysms / haemorrhages / hard & soft exudates), 11,378 boxes across
+  54 training images. When weights are unavailable the pipeline degrades
+  honestly to classifier-only (`detector_ready: false` in `/health`).
+- **Dual-engine consistency**: lesion load → expected grade band vs classifier
+  grade → `Consistent` / `Flagged for Review` / `Review - Low Lesion Evidence`
+  (zero lesions but grade ≥ 2).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Model weights are **not committed** to git. Generated artifacts live in
+`backend/models/` (`efficientnet_b0_dr.pt` + `efficientnet_b0_dr_meta.json` with
+epoch, val QWK, training date and git commit) and `backend/models/weights`.
+Re-train or download as needed.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Demo samples
+
+`backend/demo_samples/` holds a curated, pre-verified set: **2 clean fundus
+images per severity grade (0–4)** plus **2 deliberately blurred/dark captures**
+that exercise the recapture flow. Regenerate with:
+
+```bash
+python backend/prepare_demo_samples.py --data-dir path/to/aptos2019
+```
+
+`python -m app.seed` also populates demo patients/scans/findings so the admin
+dashboard and doctor review queue are never empty on first load.
+
+## Provenance & clinical disclaimer
+
+Every result view shows exactly what was run (model, training source, val QWK,
+detector status) plus:
+
+> *NetraScan is a decision-support prototype, not a certified diagnostic device.
+> Results must be reviewed by a qualified ophthalmologist before any clinical
+> decision.*
+
+The quality gate warns when an image looks non-fundus; however the classifier
+has no built-in "is this a retina" check — a non-fundus photo will still produce
+a numeric grade, which is disclosed in the UI/README. A binary fundus-vs-non
+gate is a listed stretch goal.
+
+## Known constraints & next steps
+
+- **Rural/low-connectivity**: lightweight UI, large touch targets, upload
+  progress states. No offline support yet (listed as a future consideration).
+- **Deferred (stubs only)**: Grad-CAM heatmaps, NLG report generation,
+  telemedicine/ABDM sync — visible as a locked "Coming Next" card.
+- **CPU-only**: the reference machine has no discrete GPU; inference/training
+  run on CPU (documented CPU-only fallback, must not crash).
+
+## Project layout
+
+```
+backend/                FastAPI (auth, uploads, quality gate, analyze,
+                        dashboard, ML registry, trainers, seed, parity script)
+  app/ml/               preprocessing | quality_gate | classifier | detector |
+                        consistency | registry
+  demo_samples/         curated pre-verified fundus + poor captures
+app/  components/  lib/ Next.js (React + Tailwind): patient/worker/doctor/admin
+```

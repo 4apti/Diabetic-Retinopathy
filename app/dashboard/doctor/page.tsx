@@ -23,6 +23,7 @@ import {
 } from "@/lib/api"
 import { useSession } from "@/lib/session"
 import { Info } from "lucide-react"
+import { isReviewItem, findingBadgeTone } from "@/lib/consistency"
 
 const gradeLabels = ["No DR", "Mild", "Moderate", "Severe", "Proliferative"]
 
@@ -87,8 +88,6 @@ function QueueItem({ item, token }: { item: ReviewQueueItem; token: string }) {
     lesions = "—"
   }
 
-  const flagged = item.consistency_status === "Flagged for Review"
-
   return (
     <Card>
       <CardHeader>
@@ -107,7 +106,7 @@ function QueueItem({ item, token }: { item: ReviewQueueItem; token: string }) {
             </CardDescription>
           </div>
           <div className="flex items-center gap-2">
-            <Badge tone={flagged ? "destructive" : "success"}>
+            <Badge tone={findingBadgeTone(item.consistency_status)}>
               {item.consistency_status}
             </Badge>
             <Badge
@@ -196,6 +195,14 @@ function QueueItem({ item, token }: { item: ReviewQueueItem; token: string }) {
             })()}
           </p>
         )}
+
+        {item.analysis_status === "completed" && (
+          <p className="mt-2 text-[11px] text-muted-foreground">
+            NetraScan is a decision-support prototype, not a certified
+            diagnostic device. Results must be reviewed by a qualified
+            ophthalmologist before any clinical decision.
+          </p>
+        )}
       </CardContent>
     </Card>
   )
@@ -226,9 +233,7 @@ function DoctorDashboard() {
     }
   }, [token, retry])
 
-  const flagged = queue?.filter(
-    (item) => item.consistency_status === "Flagged for Review",
-  )
+  const flagged = queue?.filter((item) => isReviewItem(item.consistency_status))
 
   return (
     <DashboardShell
@@ -283,7 +288,7 @@ function DoctorDashboard() {
       {queue && queue.length > 0 ? (
         <div className="flex flex-col gap-4">
           {queue
-            .filter((item) => item.consistency_status !== "Flagged for Review")
+            .filter((item) => !isReviewItem(item.consistency_status))
             .map((item) => (
               <QueueItem key={item.image_id} item={item} token={token ?? ""} />
             ))}

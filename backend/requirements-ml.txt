@@ -1,8 +1,9 @@
 # ML dependencies — needed for training and live inference (Engine A + B).
-torch>=2.2
-torchvision>=0.17
-opencv-python-headless>=4.9
-ultralytics>=8.2
-pandas>=2.2
-scikit-learn>=1.4
-tqdm>=4.66
+# Exact versions are pinned per spec for reproducible judges' setups.
+torch==2.14.0+cpu
+torchvision==0.29.0+cpu
+opencv-python-headless==5.0.0
+ultralytics==8.4.146
+pandas==3.0.5
+scikit-learn==1.9.1
+tqdm==4.66.6

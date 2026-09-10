@@ -79,7 +79,7 @@ def analyze_image(
         }
 
         finding.lesion_list = json.dumps(lesion_list)
-        finding.lesion_count = det_result.total_count
+        finding.lesion_count = sum(lesion_counts.values())
         finding.icdr_grade = cls_result.grade
         finding.icdr_confidence = round(cls_result.confidence, 4)
         finding.consistency_status = consistency

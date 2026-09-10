@@ -84,6 +84,7 @@ export interface UploadOut {
   filename: string
   quality_status: string
   quality_score: number | null
+  retake_count?: number
   uploaded_at: string
   findings: FindingOut[]
 }

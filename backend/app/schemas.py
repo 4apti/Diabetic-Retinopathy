@@ -78,6 +78,7 @@ class UploadOut(BaseModel):
     filename: str
     quality_status: str
     quality_score: Optional[float] = None
+    retake_count: int = 0
     uploaded_at: datetime
 
     findings: list[FindingOut] = []

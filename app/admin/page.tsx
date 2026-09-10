@@ -15,6 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
+import { isReviewItem } from "@/lib/consistency"
 import {
   type ReviewQueueItem,
   type RoleStats,
@@ -50,9 +51,7 @@ function AdminOverview() {
     }
   }, [token, retry])
 
-  const flagged = queue?.filter(
-    (item) => item.consistency_status === "Flagged for Review",
-  )
+  const flagged = queue?.filter((item) => isReviewItem(item.consistency_status))
   const gradeDist = stats?.grade_distribution ?? {}
 
   return (

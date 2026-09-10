@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import time
+from collections import defaultdict, deque
+
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -9,9 +12,28 @@ from ..security import create_access_token, hash_password, verify_password
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# Simple in-memory brute-force limiter: 10 attempts / 15 min per client IP.
+_LOGIN_WINDOW_SEC = 15 * 60
+_LOGIN_MAX_ATTEMPTS = 10
+_login_attempts: dict[str, deque[float]] = defaultdict(deque)
+
+
+def _check_login_rate(ip: str) -> None:
+    now = time.monotonic()
+    window = _login_attempts[ip]
+    while window and now - window[0] > _LOGIN_WINDOW_SEC:
+        window.popleft()
+    if len(window) >= _LOGIN_MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many login attempts — try again in a few minutes",
+        )
+    window.append(now)
+
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)):
+def login(payload: LoginRequest, request: Request, db: Session = Depends(get_db)):
+    _check_login_rate(request.client.host if request.client else "unknown")
     user = db.query(User).filter(User.email == payload.email.lower().strip()).first()
     if user is None or not verify_password(payload.password, user.hashed_password):
         raise HTTPException(

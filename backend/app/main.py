@@ -13,6 +13,19 @@ from .routers import analyze, auth, dashboard, patients, uploads
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    # Lightweight additive migration for existing SQLite DBs.
+    from sqlalchemy import text
+
+    with engine.connect() as conn:
+        try:
+            conn.execute(
+                text(
+                    "ALTER TABLE image_uploads ADD COLUMN retake_count INTEGER DEFAULT 0"
+                )
+            )
+            conn.commit()
+        except Exception:
+            pass  # column already exists
     registry.load()
     yield
 

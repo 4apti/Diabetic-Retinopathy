@@ -34,18 +34,30 @@ def lesion_severity_band(lesion_counts: dict[str, int]) -> tuple[int, int]:
     return 3, 4
 
 
+CONSISTENT = "Consistent"
+FLAGGED = "Flagged for Review"
+LOW_LESION_EVIDENCE = "Review - Low Lesion Evidence"
+
+
 def check_consistency(
     lesion_counts: dict[str, int],
     classifier_grade: Optional[int],
 ) -> str:
-    """Return 'Consistent' or 'Flagged for Review'."""
+    """Return 'Consistent', 'Flagged for Review' or 'Review - Low Lesion Evidence'."""
     if classifier_grade is None:
-        return "Flagged for Review"
+        return FLAGGED
+
+    if not lesion_counts:
+        # Zero lesions detected: a grade >= 2 (moderate+) is suspicious and may
+        # reflect a lesion-detector miss rather than genuine disagreement.
+        if classifier_grade >= 2:
+            return LOW_LESION_EVIDENCE
+        return CONSISTENT
 
     low, high = lesion_severity_band(lesion_counts)
 
     # No lesions but a moderate+ grading is suspicious; heavy lesion load with
     # a no-DR grading is also suspicious.
     if low <= classifier_grade <= high:
-        return "Consistent"
-    return "Flagged for Review"
+        return CONSISTENT
+    return FLAGGED

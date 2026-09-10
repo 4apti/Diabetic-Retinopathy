@@ -23,6 +23,7 @@ import {
   patientsApi,
 } from "@/lib/api"
 import { useSession } from "@/lib/session"
+import { findingBadgeTone } from "@/lib/consistency"
 import { Info } from "lucide-react"
 
 function parseLesions(raw: string | { type: string; count: number }[]): {
@@ -73,15 +74,13 @@ function ModelProvenanceNote({ raw }: { raw: string }) {
           eye-care professional.
         </li>
       </ul>
+      <p className="mt-3 border-t pt-2 font-medium">
+        NetraScan is a decision-support prototype, not a certified diagnostic
+        device. Results must be reviewed by a qualified ophthalmologist before
+        any clinical decision.
+      </p>
     </div>
   )
-}
-
-function findingBadgeTone(status: string): "accent" | "destructive" | "success" {
-  if (status === "Flagged for Review") return "destructive"
-  if (status === "Completed" || status === "completed" || status === "Consistent")
-    return "success"
-  return "accent"
 }
 
 function FindingPanel({ finding, token }: { finding: FindingOut; token: string }) {
@@ -185,6 +184,17 @@ function FindingPanel({ finding, token }: { finding: FindingOut; token: string }
         {finding.analysis_status === "completed" && finding.model_provenance && (
           <ModelProvenanceNote raw={finding.model_provenance} />
         )}
+
+        <div className="mt-4 rounded-lg border border-dashed p-3 opacity-70">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            Phase 3 &amp; beyond — Coming Next
+          </p>
+          <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+            <li>Grad-CAM heatmaps — visual explanations of the severity decision</li>
+            <li>Plain-language report generation (NLG)</li>
+            <li>Telemedicine / doctor sign-off dashboard and ABDM sync</li>
+          </ul>
+        </div>
 
         {finding.analysis_status === "queued" && (
           <p className="text-sm text-muted-foreground">

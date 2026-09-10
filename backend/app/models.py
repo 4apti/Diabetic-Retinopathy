@@ -61,6 +61,7 @@ class ImageUpload(Base):
     file_path = Column(String, nullable=False)
     quality_status = Column(String, default="pending")  # pending | acceptable | poor
     quality_score = Column(Float, nullable=True)
+    retake_count = Column(Integer, default=0)  # consecutive failed capture attempts
     uploaded_at = Column(DateTime, default=datetime.utcnow)
 
     patient = relationship("Patient", back_populates="uploads")
