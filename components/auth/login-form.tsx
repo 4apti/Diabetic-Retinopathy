@@ -29,8 +29,8 @@ import { Spinner } from "@/components/ui/spinner"
 import { authApi, ApiError } from "@/lib/api"
 import { defaultRoleLanding, useSession } from "@/lib/session"
 
-export type LoginFormMode = "user" | "admin"
-export type UserRole = "patient" | "worker" | "doctor"
+export type LoginFormMode = "user" | "doctor" | "admin"
+export type UserRole = "patient" | "worker" | "doctor" | "ophthalmologist"
 
 export interface LoginFormProps {
   mode: LoginFormMode
@@ -61,13 +61,21 @@ const roleConfig: Record<
     context:
       "You'll review incoming screenings and support health workers with ophthalmologist guidance.",
   },
+  ophthalmologist: {
+    label: "Ophthalmologist",
+    buttonLabel: "Continue as Ophthalmologist",
+    apiRole: "ophthalmologist",
+    context:
+      "You'll review AI-screened cases, sign off reports, and generate patient summaries.",
+  },
 }
 
-const roleOrder: UserRole[] = ["patient", "worker", "doctor"]
+const roleOrder: UserRole[] = ["patient", "worker", "doctor", "ophthalmologist"]
 const roleLabel: Record<UserRole, string> = {
   patient: "Patient",
   worker: "Health Worker",
   doctor: "Doctor",
+  ophthalmologist: "Ophthalmologist",
 }
 
 function validateEmail(email: string): string | null {
@@ -84,10 +92,13 @@ function validatePassword(password: string): string | null {
 
 export function LoginForm({ mode }: LoginFormProps) {
   const isAdmin = mode === "admin"
+  const isDoctor = mode === "doctor"
   const router = useRouter()
   const { signIn } = useSession()
 
-  const [role, setRole] = React.useState<UserRole>("patient")
+  const [role, setRole] = React.useState<UserRole>(
+    isDoctor ? "ophthalmologist" : "patient",
+  )
   const [email, setEmail] = React.useState("")
   const [password, setPassword] = React.useState("")
   const [showPassword, setShowPassword] = React.useState(false)
@@ -122,7 +133,14 @@ export function LoginForm({ mode }: LoginFormProps) {
     try {
       const payload = await authApi.login(email, password)
 
-      if (isAdmin) {
+      if (isDoctor) {
+        if (payload.user.role !== "ophthalmologist" && payload.user.role !== "doctor") {
+          setServerError(
+            "That account is not a reviewing clinician. Ophthalmologists sign in here; patients and health workers use the user login.",
+          )
+          return
+        }
+      } else if (isAdmin) {
         if (payload.user.role !== "admin") {
           setServerError(
             "That account is not an administrator. Use the user login for the dashboard you need.",
@@ -137,7 +155,9 @@ export function LoginForm({ mode }: LoginFormProps) {
               ? "Health Worker"
               : payload.user.role === "doctor"
                 ? "Doctor"
-                : "Patient"
+                : payload.user.role === "ophthalmologist"
+                  ? "Ophthalmologist"
+                  : "Patient"
           }. Switch the role toggle to ${expected} and try again.`,
         )
         return
@@ -158,7 +178,9 @@ export function LoginForm({ mode }: LoginFormProps) {
 
   const buttonLabel = isAdmin
     ? "Sign in to Administration"
-    : roleConfig[role].buttonLabel
+    : isDoctor
+      ? "Sign in to Review Portal"
+      : roleConfig[role].buttonLabel
 
   return (
     <div className="flex w-full flex-col gap-5">
@@ -170,7 +192,8 @@ export function LoginForm({ mode }: LoginFormProps) {
           Credentials are checked against the NetraScan API. Demo accounts:
           <br />
           patient@example.org · worker@example.org · doctor@example.org ·
-          admin@netrascan.in (passwords end in &ldquo;123!&rdquo;).
+          ophthalmologist@netrascan.in · admin@netrascan.in (passwords end in
+          &ldquo;123!&rdquo;).
         </AlertDescription>
       </Alert>
 

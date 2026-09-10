@@ -3,7 +3,7 @@
 import * as React from "react"
 import { Eye } from "lucide-react"
 
-type LoginShellMode = "user" | "admin"
+type LoginShellMode = "user" | "doctor" | "admin"
 
 interface LoginShellProps {
   children: React.ReactNode
@@ -14,6 +14,10 @@ const modeConfig = {
   user: {
     title: "Sign in to NetraScan",
     subtitle: "Access your screening portal",
+  },
+  doctor: {
+    title: "Ophthalmologist Review Portal",
+    subtitle: "Review AI-screened cases and sign off reports",
   },
   admin: {
     title: "NetraScan Administration",

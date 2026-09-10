@@ -7,7 +7,16 @@ from . import models  # noqa: F401 — ensure ORM models are registered
 from .config import settings
 from .database import Base, engine
 from .ml.registry import registry
-from .routers import analyze, auth, dashboard, patients, reports, uploads
+from .routers import (
+    analyze,
+    auth,
+    dashboard,
+    patients,
+    reports,
+    telemedicine,
+    uploads,
+)
+from .sync import sync_worker
 
 
 @asynccontextmanager
@@ -27,7 +36,9 @@ async def lifespan(app: FastAPI):
                 pass  # column already exists
         conn.commit()
     registry.load()
+    sync_worker.start()
     yield
+    sync_worker.stop()
 
 
 app = FastAPI(
@@ -50,7 +61,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-for router in (auth.router, patients.router, uploads.router, analyze.router, dashboard.router, reports.router):
+for router in (
+    auth.router,
+    patients.router,
+    uploads.router,
+    analyze.router,
+    dashboard.router,
+    reports.router,
+    telemedicine.router,
+):
     app.include_router(router, prefix=settings.api_prefix)
 
 

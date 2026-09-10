@@ -29,5 +29,9 @@ class Settings(BaseSettings):
     input_size: int = 380
     device: str = "cpu"
 
+    # Phase 4 — the prototype runs the PHC instance and the telemedicine server
+    # as the same backend, so the bandwidth probe pings our own health endpoint.
+    telemedicine_base_url: str = "http://127.0.0.1:8000"
+
 
 settings = Settings()

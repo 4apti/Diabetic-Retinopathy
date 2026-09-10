@@ -57,7 +57,7 @@ export interface UserOut {
   id: number
   email: string
   full_name: string
-  role: "patient" | "health_worker" | "doctor" | "admin"
+  role: "patient" | "health_worker" | "doctor" | "admin" | "ophthalmologist"
 }
 
 export interface TokenResponse {
@@ -162,6 +162,73 @@ export interface ScreeningReport {
   generated_at: string | null
 }
 
+export interface DoctorQueueItem {
+  image_id: string
+  patient_id: number
+  patient_name: string
+  icdr_grade: number | null
+  icdr_confidence: number | null
+  consistency_status: string
+  sync_status: "queued" | "syncing" | "synced" | "failed"
+  viewed: boolean
+  signed_off: boolean
+  signed_decision: "Approved" | "Revised" | "Rejected" | null
+  analyzed_at: string | null
+}
+
+export interface DoctorQueueCount {
+  unseen: number
+  unseen_flagged: number
+}
+
+export interface SignOffInput {
+  image_id: string
+  decision: "Approved" | "Revised" | "Rejected"
+  doctor_notes?: string
+  revised_grade?: number | null
+}
+
+export interface SignOffResult {
+  image_id: string
+  decision: string
+  doctor_notes: string | null
+  revised_grade: number | null
+  signed_at: string
+  summary_languages: string[]
+}
+
+export interface SyncStatus {
+  pending: number
+  syncing: number
+  synced: number
+  failed: number
+  total: number
+  offline_sim: boolean
+}
+
+export type PatientScanState =
+  | "scan_received"
+  | "analysis_in_progress"
+  | "awaiting_review"
+  | "reviewed"
+
+export interface PatientStatus {
+  image_id: string
+  state: PatientScanState
+  stage_label: string
+  patient_text: string
+  summary_languages: string[]
+  signed_off: boolean
+  signed_decision: string | null
+  revised_grade: number | null
+}
+
+export interface PatientSummary {
+  language: string
+  summary_text: string
+  has_audio: boolean
+}
+
 export const authApi = {
   login: (email: string, password: string) =>
     apiFetch<TokenResponse>("/auth/login", {
@@ -208,6 +275,52 @@ export const reportsApi = {
     apiFetch<ScreeningReport>(`/reports/${imageId}`, {}, token),
   gradcamUrl: (imageId: string) =>
     `${API_BASE_URL}/reports/${imageId}/gradcam`,
+}
+
+export const telemedApi = {
+  queue: (token: string) =>
+    apiFetch<DoctorQueueItem[]>("/doctor/queue", {}, token),
+  queueCount: (token: string) =>
+    apiFetch<DoctorQueueCount>("/doctor/queue/count", {}, token),
+  markSeen: (token: string, imageId: string) =>
+    apiFetch<{ image_id: string; viewed: boolean }>(
+      `/doctor/queue/${imageId}/seen`,
+      { method: "POST" },
+      token,
+    ),
+  signOff: (token: string, input: SignOffInput) =>
+    apiFetch<SignOffResult>("/doctor/signoffs", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }, token),
+  syncStatus: (token: string) =>
+    apiFetch<SyncStatus>("/sync/status", {}, token),
+  setOfflineSim: (token: string, enabled: boolean) =>
+    apiFetch<SyncStatus>("/sync/offline-sim", {
+      method: "POST",
+      body: JSON.stringify({ enabled }),
+    }, token),
+  scanStatus: (token: string, imageId: string) =>
+    apiFetch<PatientStatus>(`/reports/${imageId}/status`, {}, token),
+  summaries: (token: string, imageId: string) =>
+    apiFetch<PatientSummary[]>(`/summaries/${imageId}`, {}, token),
+}
+
+export function summaryAudioUrl(imageId: string, language: string): string {
+  return `${API_BASE_URL}/summaries/${imageId}/${language}/audio`
+}
+
+export async function fetchSummaryAudioUrl(
+  imageId: string,
+  language: string,
+  token: string,
+): Promise<string> {
+  const response = await fetch(summaryAudioUrl(imageId, language), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) throw new Error(`No audio clip (${response.status})`)
+  const blob = await response.blob()
+  return URL.createObjectURL(blob)
 }
 
 /**

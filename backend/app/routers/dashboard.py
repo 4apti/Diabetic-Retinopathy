@@ -13,7 +13,7 @@ router = APIRouter(tags=["dashboard"])
 @router.get("/stats", response_model=RoleStats)
 def dashboard_stats(
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin", "health_worker", "doctor")),
+    user: User = Depends(require_roles("admin", "health_worker", "doctor", "ophthalmologist")),
 ):
     patients_q = db.query(Patient)
     uploads_q = db.query(ImageUpload)
@@ -49,7 +49,7 @@ def dashboard_stats(
 @router.get("/review-queue", response_model=list[dict])
 def review_queue(
     db: Session = Depends(get_db),
-    user: User = Depends(require_roles("admin", "doctor", "health_worker")),
+    user: User = Depends(require_roles("admin", "doctor", "health_worker", "ophthalmologist")),
 ):
     """Uploads whose dual-engine check was flagged, plus completed scans for context."""
     limit = 50

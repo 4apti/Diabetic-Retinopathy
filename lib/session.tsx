@@ -76,6 +76,7 @@ export const rolePath: Record<string, string> = {
   patient: "/dashboard/patient",
   health_worker: "/dashboard/worker",
   doctor: "/dashboard/doctor",
+  ophthalmologist: "/dashboard/doctor",
   admin: "/admin",
 }
 

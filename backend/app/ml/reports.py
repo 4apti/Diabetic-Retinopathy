@@ -29,6 +29,7 @@ from .gradcam import (
     report_dir,
 )
 from .registry import registry
+from ..sync import enqueue_sync
 
 logger = logging.getLogger("netrascan.reports")
 
@@ -267,6 +268,7 @@ def ensure_report(
         stale = report.model_version != finding.model_version
         missing_heatmap = allow_gradcam and report.gradcam_path is None
         if not stale and not missing_heatmap:
+            enqueue_sync(db, finding.image_id)  # Phase 4 — cover pre-Phase-4 rows
             return report  # cached report is current — don't regenerate
         # fall through: rebuild because the model changed or heatmap is missing
 
@@ -332,4 +334,11 @@ def ensure_report(
     except Exception as exc:  # noqa: BLE001 — DB write must not break the request
         logger.warning("Could not persist report for %s: %s", finding.image_id, exc)
         db.rollback()
+
+    # Phase 4 — a real report exists: it is now eligible for store-and-forward
+    # sync into the telemedicine queue (idempotent).
+    try:
+        enqueue_sync(db, finding.image_id)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not enqueue %s for sync: %s", finding.image_id, exc)
     return report

@@ -3,9 +3,10 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
-import { LayoutDashboard, LogOut, ScanEye } from "lucide-react"
+import { Bell, CheckCircle2, LayoutDashboard, LogOut, ScanEye } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { telemedApi } from "@/lib/api"
 import { useSession } from "@/lib/session"
 import { cn } from "cn"
 
@@ -13,8 +14,11 @@ const roleLabel: Record<string, string> = {
   patient: "Patient",
   health_worker: "Health Worker",
   doctor: "Doctor",
+  ophthalmologist: "Ophthalmologist",
   admin: "Administrator",
 }
+
+const QUEUE_POLL_MS = 20000
 
 interface DashboardShellProps {
   children: React.ReactNode
@@ -29,8 +33,56 @@ export function DashboardShell({
   description,
   sidebar = true,
 }: DashboardShellProps) {
-  const { user, signOut } = useSession()
+  const { user, token, signOut } = useSession()
   const router = useRouter()
+
+  const [queueCount, setQueueCount] = React.useState(0)
+  const [queueFlagged, setQueueFlagged] = React.useState(0)
+  const [toast, setToast] = React.useState<string | null>(null)
+
+  const isReviewer = user?.role === "doctor" || user?.role === "ophthalmologist"
+  const lastCountRef = React.useRef<number | null>(null)
+
+  // Phase 4 — polling notifications (§5): badge + toast when new cases land.
+  React.useEffect(() => {
+    if (!isReviewer || !token) return
+    const t = token
+    let cancelled = false
+
+    async function poll() {
+      try {
+        const count = await telemedApi.queueCount(t)
+        if (cancelled) return
+        setQueueCount(count.unseen)
+        setQueueFlagged(count.unseen_flagged)
+        const prev = lastCountRef.current
+        if (prev !== null && count.unseen > prev) {
+          const delta = count.unseen - prev
+          setToast(
+            `${delta} new case${delta === 1 ? "" : "s"} awaiting review${
+              count.unseen_flagged > 0 ? " — flagged for priority" : ""
+            }`,
+          )
+        }
+        lastCountRef.current = count.unseen
+      } catch {
+        // backend offline — keep the last known counts; next poll recovers
+      }
+    }
+
+    poll()
+    const id = window.setInterval(poll, QUEUE_POLL_MS)
+    return () => {
+      cancelled = true
+      window.clearInterval(id)
+    }
+  }, [token, isReviewer])
+
+  React.useEffect(() => {
+    if (!toast) return
+    const id = window.setTimeout(() => setToast(null), 6000)
+    return () => window.clearTimeout(id)
+  }, [toast])
 
   const navItems = (() => {
     if (!user) return []
@@ -40,7 +92,15 @@ export function DashboardShell({
       case "health_worker":
         return [{ label: "Patients & scans", href: "/dashboard/worker" }]
       case "doctor":
-        return [{ label: "Review queue", href: "/dashboard/doctor" }]
+      case "ophthalmologist":
+        return [
+          {
+            label: "Review queue",
+            href: "/dashboard/doctor",
+            badge: queueCount,
+            flagged: queueFlagged,
+          },
+        ]
       case "admin":
         return [
           { label: "Overview", href: "/admin" },
@@ -103,6 +163,18 @@ export function DashboardShell({
               >
                 <LayoutDashboard className="size-4" aria-hidden />
                 {item.label}
+                {"badge" in item && item.badge > 0 && (
+                  <span
+                    className={cn(
+                      "ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-xs font-semibold",
+                      item.flagged > 0
+                        ? "bg-destructive text-destructive-foreground"
+                        : "bg-primary text-primary-foreground",
+                    )}
+                  >
+                    {item.badge}
+                  </span>
+                )}
               </Link>
             ))}
           </nav>
@@ -120,6 +192,32 @@ export function DashboardShell({
           {children}
         </main>
       </div>
+
+      {/* Phase 4 — in-app polling notification toast */}
+      {toast && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-4 right-4 z-50 flex max-w-sm items-start gap-3 rounded-xl border bg-background p-4 shadow-lg"
+        >
+          <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-primary" />
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <span className="flex items-center gap-1.5 text-sm font-semibold text-foreground">
+              <Bell className="size-3.5" aria-hidden />
+              New review cases
+            </span>
+            <p className="text-sm text-muted-foreground">{toast}</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setToast(null)}
+            aria-label="Dismiss notification"
+            className="ml-1 shrink-0 rounded-md p-1 text-muted-foreground outline-none transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   )
 }

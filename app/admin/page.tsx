@@ -19,7 +19,9 @@ import { findingBadgeTone, isReviewItem } from "@/lib/consistency"
 import {
   type ReviewQueueItem,
   type RoleStats,
+  type SyncStatus,
   dashboardApi,
+  telemedApi,
 } from "@/lib/api"
 import { useSession } from "@/lib/session"
 import { ScreeningReportPanel } from "@/components/reports/report-panel"
@@ -33,15 +35,22 @@ function AdminOverview() {
   const [queue, setQueue] = React.useState<ReviewQueueItem[] | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [retry, setRetry] = React.useState(0)
+  const [sync, setSync] = React.useState<SyncStatus | null>(null)
+  const [syncBusy, setSyncBusy] = React.useState(false)
 
   React.useEffect(() => {
     if (!token) return
     let active = true
-    Promise.all([dashboardApi.stats(token), dashboardApi.reviewQueue(token)])
-      .then(([stats, queue]) => {
+    Promise.all([
+      dashboardApi.stats(token),
+      dashboardApi.reviewQueue(token),
+      telemedApi.syncStatus(token),
+    ])
+      .then(([stats, queue, sync]) => {
         if (active) {
           setStats(stats)
           setQueue(queue)
+          setSync(sync)
         }
       })
       .catch((err: Error) => {
@@ -180,6 +189,74 @@ function AdminOverview() {
       {queue && queue.length === 0 && (
         <p className="text-sm text-muted-foreground">No scans uploaded yet.</p>
       )}
+
+      <h2 className="mt-6 font-heading text-lg font-semibold">
+        Telemedicine sync (Phase 4)
+      </h2>
+      <Card className="mt-2">
+        <CardHeader>
+          <CardTitle>Store-and-forward queue</CardTitle>
+          <CardDescription>
+            Cases flow PHC &rarr; sync queue &rarr; telemedicine review. The
+            prototype runs both sides on one backend, so transmission is an
+            internal state transition. Low bandwidth &mdash; or the demo
+            switch below &mdash; keeps cases queued with &ldquo;Waiting for
+            connection&rdquo;.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {sync ? (
+            <div className="flex flex-wrap items-center gap-3">
+              {[
+                { label: "Synced", value: sync.synced, tone: "success" as const },
+                { label: "Pending", value: sync.pending, tone: "warning" as const },
+                { label: "Syncing", value: sync.syncing, tone: "accent" as const },
+                { label: "Failed", value: sync.failed, tone: "destructive" as const },
+              ].map((s) => (
+                <div key={s.label} className="flex items-center gap-2 rounded-lg bg-muted/60 px-3 py-2 text-sm">
+                  <span className="text-muted-foreground">{s.label}</span>
+                  <Badge tone={s.tone}>{s.value}</Badge>
+                </div>
+              ))}
+              <div className="ml-auto flex items-center gap-2">
+                <span className="text-sm font-medium">
+                  Offline simulation:{" "}
+                  <span className={sync.offline_sim ? "text-destructive" : "text-muted-foreground"}>
+                    {sync.offline_sim ? "ON" : "OFF"}
+                  </span>
+                </span>
+                <Button
+                  variant={sync.offline_sim ? "destructive" : "outline"}
+                  size="sm"
+                  disabled={syncBusy}
+                  onClick={async () => {
+                    if (!token) return
+                    setSyncBusy(true)
+                    try {
+                      setSync(await telemedApi.setOfflineSim(token, !sync.offline_sim))
+                    } catch {
+                      /* keep last known state */
+                    } finally {
+                      setSyncBusy(false)
+                    }
+                  }}
+                >
+                  {syncBusy ? <Spinner size="sm" /> : null}
+                  {sync.offline_sim ? "Restore connection" : "Simulate offline"}
+                </Button>
+              </div>
+              <p className="w-full text-xs text-muted-foreground">
+                With the switch ON, the bandwidth probe fails and queued cases
+                stay pending &mdash; the patient and doctor UIs keep working and
+                auto-resume when the connection returns (or the switch is
+                turned off).
+              </p>
+            </div>
+          ) : (
+            <Spinner size="sm" />
+          )}
+        </CardContent>
+      </Card>
 
       <h2 className="mt-6 font-heading text-lg font-semibold">
         Clinical reports (Phase 3)

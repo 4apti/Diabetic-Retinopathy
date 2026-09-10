@@ -117,3 +117,63 @@ class ScreeningReport(Base):
     generated_at = Column(DateTime, default=datetime.utcnow)
 
     finding = relationship("AIFinding", back_populates="report")
+
+
+class SyncQueue(Base):
+    """Phase 4 — store-and-forward sync queue (backend-side, per spec §1).
+
+    The prototype runs the PHC instance and the "telemedicine server" as one
+    backend, so transmission is an internal state transition (queued ->
+    syncing -> synced) rather than a network call. Idempotent by image_id.
+    """
+
+    __tablename__ = "sync_queue"
+
+    id = Column(Integer, primary_key=True, index=True)
+    image_id = Column(
+        String, ForeignKey("ai_findings.image_id"), unique=True, index=True, nullable=False
+    )
+    status = Column(String, default="queued")  # queued | syncing | synced | failed
+    attempt_count = Column(Integer, default=0)
+    last_error = Column(Text, nullable=True)
+    last_attempt_at = Column(DateTime, nullable=True)
+    synced_at = Column(DateTime, nullable=True)
+    viewed_at = Column(DateTime, nullable=True)  # set when an ophthalmologist opens the case
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SignOff(Base):
+    """Phase 4 — auditable ophthalmologist sign-off (never a plain boolean).
+
+    Approved: the AI grading/report stands. Revised: the doctor overrides the
+    ICDR grade — the AI's original grade stays in ai_findings, the doctor's in
+    revised_grade, so the disagreement is preserved (a natural future retraining
+    signal, documented in the README). Rejected: case invalid, reason recorded.
+    """
+
+    __tablename__ = "sign_offs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    image_id = Column(
+        String, ForeignKey("ai_findings.image_id"), unique=True, index=True, nullable=False
+    )
+    ophthalmologist_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    decision = Column(String, nullable=False)  # Approved | Revised | Rejected
+    doctor_notes = Column(Text, nullable=True)
+    revised_grade = Column(Integer, nullable=True)  # populated only when Revised
+    signed_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PatientSummary(Base):
+    """Phase 4 — post-sign-off patient summary, local-language + offline audio."""
+
+    __tablename__ = "patient_summaries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    image_id = Column(String, ForeignKey("ai_findings.image_id"), index=True, nullable=False)
+    language = Column(String, nullable=False)  # en | hi
+    summary_text = Column(Text, nullable=False)
+    audio_path = Column(String, nullable=True)  # pre-generated offline clip
+    generated_at = Column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("image_id", "language"),)

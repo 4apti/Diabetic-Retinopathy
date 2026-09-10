@@ -2,10 +2,11 @@
 
 AI-powered diabetic retinopathy (DR) screening prototype for rural Primary Health
 Centres. **Phase 1** (capture + quality gate + role auth), **Phase 2** (real
-trained models + dual-engine analysis + provenance) and **Phase 3** (real
-Grad-CAM explainability + structured findings + plain-language reports) are
-implemented; telemedicine, ABDM sync, offline store-and-forward and
-local-language output remain locked "Coming Next" stubs (Phase 4).
+trained models + dual-engine analysis + provenance), **Phase 3** (real
+Grad-CAM explainability + structured findings + plain-language reports) and
+**Phase 4** (telemedicine store-and-forward sync, ophthalmologist sign-off
+portal, patient status stages, local-language + voice summaries) are all
+implemented. Remaining polish is listed under *Future work*.
 
 ---
 
@@ -36,6 +37,7 @@ npm start            # http://localhost:3000  (API at :8000)
 | Patient | `patient@example.org` | `Patient123!` |
 | Health worker | `worker@example.org` | `Worker123!` |
 | Doctor | `doctor@example.org` | `Doctor123!` |
+| Ophthalmologist | `ophthalmologist@netrascan.in` | `Doctor123!` |
 
 > Auth note: Phase 1's prompt specified phone + mocked-OTP login. NetraScan v2
 > ships email + password with bcrypt hashing and an in-memory login rate limiter
@@ -122,11 +124,72 @@ checkpoint is updated, the stored report is regenerated rather than left stale.
 **Limitations disclosed**: Phase 1's capture flow does not record the eye
 (OD/OS), so `region_notes` uses *image-relative* quadrants ("upper-left region
 of the image"), never anatomical terms — noted in the admin Model Info panel.
-Report text is English-only (Phase 4 adds local-language output, kept decoupled
-from the template engine).
+The clinical report templates are English; Phase 4's patient summaries add
+Hindi + voice on top of the template engine, decoupled from it.
 
 **Report export**: copy/print from the browser via the in-report print button
 and a print stylesheet (PDF export is a planned stretch goal).
+
+## Phase 4 — Telemedicine & the ophthalmologist review loop
+
+The closed loop: **PHC captures → query quality gate → two-engine analysis →
+report + heatmap → store-and-forward sync queue → ophthalmologist review →
+sign-off → patient summary in their language, with voice.**
+
+- **Store-and-forward queue** (`sync_queue`, idempotent by `image_id`): every
+  generated report is enqueued automatically. A background worker re-checks
+  bandwidth (`telemedicine_base_url` /health, >3 s ⇒ low) and transmits with
+  exponential backoff (30 s → 60 s → 120 s → 240 s, capped at 5 min). Low
+  bandwidth keeps the case *queued* with "Waiting for connection"; transmission
+  failures are recorded as `failed` and retried, never dropped. Auto-resumes
+  when connectivity returns.
+  - **Prototype simplification (stated here honestly)**: the PHC-facing instance
+    and the *telemedicine server* are the **same backend**, so a successful
+    transmission is an internal state transition (`queued → syncing → synced`).
+    The retry/backoff/bandwidth semantics are fully real; only the network hop
+    is elided. A real two-server deployment is listed under *Future work*.
+  - **Admin demo switch** (`POST /api/sync/offline-sim`): forces the bandwidth
+    probe down so the low-bandwidth state can be demonstrated live — the UI
+    keeps working and drains the queue when the switch is flipped back.
+- **Ophthalmologist role** — a third clinical role (own `/doctor/login` route,
+  seeded `ophthalmologist@netrascan.in`). Server-side `require_roles` guards
+  every endpoint; the queue never trusts the client.
+- **Review portal** (`/dashboard/doctor`): synced cases with the full Phase 3
+  evidence (scan, heatmap, structured findings, report), sorted flagged-first,
+  filterable (All / Flagged / Awaiting), sync-state chips, and **sign-off**
+  (Approved / Revised / Rejected) stored in the auditable `sign_offs` table —
+  a revision keeps the AI grade *and* the doctor's `revised_grade` (a natural
+  future retraining signal). Opening a case records `viewed_at`.
+- **Notifications (§5, polling)**: the dashboard shell polls
+  `GET /api/doctor/queue/count` every 20 s, shows a persistent **Queue (N)**
+  badge (red when any are `Flagged for Review`) and a toast when new cases
+  arrive. Push/email/SMS are explicitly out of scope (Future work).
+- **Patient status stages (§6)**: server-derived (no duplicate status column)
+  on the patient scan page — *Scan received → Analysis in progress → Awaiting
+  doctor review → Reviewed*. Plain language, icon-paired, no fake ETA. The AI
+  report and heatmap are **only shown to the patient after sign-off**; before
+  that the page says the scan is with the doctor.
+- **Local-language + voice summaries (§6–§7)**: after sign-off, a
+  doctor-summary is generated into `patient_summaries` in **English + Hindi**
+  from per-language templates (never machine translation), using the
+  doctor's `revised_grade` when a case was Revised. Voice is **offline** —
+  pre-generated Windows SAPI (System.Speech) WAVs per case/language, served
+  via an access-controlled endpoint with an in-page play button. No live TTS
+  call, no new packages.
+  - **Translations note**: the Hindi template copy was authored by a non-native
+    writer and should be reviewed by a fluent Hindi speaker before any
+    production use (flagged in the code too).
+- **Demo data**: `python -m app.seed` pre-syncs the demo cases into the doctor
+  queue and pre-signs one case (summary + voice included) so every patient
+  stage is demonstrable immediately. A full closed-loop run: log in as
+  worker → upload → analyze → the case appears (badge + toast) for
+  ophthalmologist → sign off → patient sees *Reviewed* + summary + voice.
+
+New tables: `sync_queue`, `sign_offs`, `patient_summaries`; new modules:
+`app/sync.py` (worker + bandwidth probe), `app/ml/summaries.py` (templates +
+SAPI voice), `app/routers/telemedicine.py` (queue/sign-off/summaries APIs),
+`components/reports/report-panel.tsx`, Phase 4 sections in the admin overview
+and dashboards.
 
 ## Provenance & clinical disclaimer
 
@@ -145,19 +208,44 @@ gate is a listed stretch goal.
 ## Known constraints & next steps
 
 - **Rural/low-connectivity**: lightweight UI, large touch targets, upload
-  progress states. No offline support yet (listed as a future consideration).
-- **Deferred (stubs only)**: Grad-CAM heatmaps, NLG report generation,
-  telemedicine/ABDM sync — visible as a locked "Coming Next" card.
+  progress states, and a store-and-forward sync queue with bandwidth-gated
+  backoff and automatic resume. A full PWA offline queue (local capture buffer
+  that syncs later) is Future work.
+- **Prototype deployments**: one backend hosts both the PHC-facing API and the
+  telemedicine role (see Phase 4 notes); reports and heatmaps are regenerated
+  after classifier retraining completes via the watchdog script.
 - **CPU-only**: the reference machine has no discrete GPU; inference/training
   run on CPU (documented CPU-only fallback, must not crash).
+
+## Future work
+
+- **Real two-server deployment**: PHC instance ↔ telemedicine server over HTTPS,
+  with signed payloads replacing the internal-state transition.
+- **ABDM integration** (Ayushman Bharat Digital Mission): patient consent,
+  ABHA identity linking and record sync to the ABDM ecosystem.
+- **PWA offline queue**: buffer captures on-device and batch-sync when
+  connectivity returns (the backend queue semantics already support this).
+- **Fundus-vs-non-fundus binary gate** so non-retinal photos are rejected early
+  rather than graded.
+- **More languages & voices**: the template engine and SAPI pipeline are
+  table-driven, so extra template languages/voices drop in without new code.
+- **Native-speaker review** of the Hindi templates before any real use.
+- **Retraining feedback loop**: `Revised` sign-offs are preserved as labels and
+  are the intended signal for classifier fine-tuning.
+- **Notifications**: push / email / SMS out of band (polling covers the demo).
+- **PDF export** of reports (print stylesheet exists).
 
 ## Project layout
 
 ```
 backend/                FastAPI (auth, uploads, quality gate, analyze,
-                        dashboard, ML registry, trainers, seed, parity script)
+                        dashboard, telemedicine, ML registry, trainers, seed,
+                        sync worker, parity script)
   app/ml/               preprocessing | quality_gate | classifier | detector |
-                        consistency | registry
+                        consistency | registry | gradcam | reports | summaries
+  app/routers/          auth | patients | uploads | analyze | dashboard |
+                        reports | telemedicine
   demo_samples/         curated pre-verified fundus + poor captures
 app/  components/  lib/ Next.js (React + Tailwind): patient/worker/doctor/admin
+                        (+ report-panel, review portal, login variants)
 ```

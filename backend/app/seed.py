@@ -37,6 +37,12 @@ DEMO_USERS = [
         "role": "doctor",
         "password": "Doctor123!",
     },
+    {
+        "email": "ophthalmologist@netrascan.in",
+        "full_name": "Dr. Anand Deshpande",
+        "role": "ophthalmologist",
+        "password": "Doctor123!",
+    },
 ]
 
 
@@ -210,12 +216,66 @@ def seed():
 
         db.commit()
         _seed_demo_scans(db, worker, anita)
+        _seed_phase4_rows(db, users.get("ophthalmologist"))
         print("Seeded demo accounts:")
         for spec in DEMO_USERS:
             print(f"  {spec['role']:<13} {spec['email']:<30} {spec['password']}")
         print("Done.")
     finally:
         db.close()
+
+
+def _seed_phase4_rows(db, ophthalmologist):
+    """Phase 4 — pre-synced queue + one signed-off case with patient summary,
+    so the doctor review portal, notifications and patient stages are all
+    demonstrable without waiting for real transmissions."""
+    from datetime import datetime
+
+    from .ml.summaries import create_summaries
+    from .models import SignOff, SyncQueue
+
+    if ophthalmologist is None:
+        return
+
+    completed = db.query(AIFinding).filter(AIFinding.analysis_status == "completed").all()
+    for f in completed:
+        if db.query(SyncQueue).filter(SyncQueue.image_id == f.image_id).first() is None:
+            db.add(
+                SyncQueue(
+                    image_id=f.image_id,
+                    status="synced",
+                    synced_at=f.analyzed_at or datetime.utcnow(),
+                )
+            )
+    db.commit()
+
+    # Sign off one clean case so the sealed loop is already visible.
+    target = (
+        db.query(AIFinding)
+        .filter(AIFinding.analysis_status == "completed", AIFinding.icdr_grade == 0)
+        .first()
+    )
+    if target is None:
+        return
+    existing = db.query(SignOff).filter(SignOff.image_id == target.image_id).first()
+    if existing is not None:
+        return
+    sign = SignOff(
+        image_id=target.image_id,
+        ophthalmologist_id=ophthalmologist.id,
+        decision="Approved",
+        doctor_notes=(
+            "Grading consistent with the lesion detector; no retinopathy. "
+            "Routine 12-month screening interval is appropriate."
+        ),
+        signed_at=datetime.utcnow() - timedelta(hours=1),
+    )
+    db.add(sign)
+    db.commit()
+    db.refresh(sign)
+    create_summaries(db, target.image_id, sign, ai_grade=int(target.icdr_grade or 0))
+    print(f"  Phase 4: {len(completed)} cases pre-synced into the doctor queue; "
+          f"{target.image_id} signed off (Approved).")
 
 
 if __name__ == "__main__":

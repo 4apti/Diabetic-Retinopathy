@@ -22,7 +22,7 @@ from ..schemas import ReportOut
 
 router = APIRouter(prefix="/reports", tags=["reports"])
 
-CLINICAL_ROLES = ("admin", "doctor", "health_worker")
+CLINICAL_ROLES = ("admin", "doctor", "health_worker", "ophthalmologist")
 
 
 def _get_accessible_upload(db: Session, user: User, image_id: str):

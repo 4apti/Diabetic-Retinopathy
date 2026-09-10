@@ -10,6 +10,7 @@ function landingFor(role: string): string {
     case "health_worker":
       return "/dashboard/worker"
     case "doctor":
+    case "ophthalmologist":
       return "/dashboard/doctor"
     case "admin":
       return "/admin"

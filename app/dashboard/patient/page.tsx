@@ -18,29 +18,142 @@ import { Badge } from "@/components/ui/badge"
 import {
   type FindingOut,
   type PatientOut,
+  type PatientStatus,
+  type PatientSummary,
   type UploadOut,
   fetchScanBlobUrl,
+  fetchSummaryAudioUrl,
   patientsApi,
+  telemedApi,
 } from "@/lib/api"
 import { useSession } from "@/lib/session"
 import { findingBadgeTone } from "@/lib/consistency"
 import { ScreeningReportPanel } from "@/components/reports/report-panel"
-import { Info } from "lucide-react"
-
-function parseLesions(raw: string | { type: string; count: number }[]): {
-  type: string
-  count: number
-}[] {
-  if (Array.isArray(raw)) return raw
-  try {
-    const parsed = JSON.parse(raw)
-    return Array.isArray(parsed) ? parsed : []
-  } catch {
-    return []
-  }
-}
+import {
+  CheckCircle2,
+  Hourglass,
+  Info,
+  Loader2,
+  ScanLine,
+  Volume2,
+} from "lucide-react"
+import { cn } from "cn"
 
 const gradeLabels = ["No DR", "Mild", "Moderate", "Severe", "Proliferative"]
+
+/* Phase 4 — plain-language patient stage machine (no fake ETA, §6). */
+const STAGE_META: Record<
+  PatientStatus["state"],
+  { icon: React.ComponentType<React.SVGProps<SVGSVGElement>>; spin?: boolean }
+> = {
+  scan_received: { icon: ScanLine },
+  analysis_in_progress: { icon: Loader2, spin: true },
+  awaiting_review: { icon: Hourglass },
+  reviewed: { icon: CheckCircle2 },
+}
+
+function SummariesSection({
+  imageId,
+  token,
+}: {
+  imageId: string
+  token: string
+}) {
+  const [summaries, setSummaries] = React.useState<PatientSummary[] | null>(null)
+  const [lang, setLang] = React.useState("en")
+  const [audioUrl, setAudioUrl] = React.useState<string | null>(null)
+  const [playing, setPlaying] = React.useState(false)
+  const audioRef = React.useRef<HTMLAudioElement | null>(null)
+
+  React.useEffect(() => {
+    let active = true
+    telemedApi
+      .summaries(token, imageId)
+      .then((rows) => {
+        if (!active) return
+        setSummaries(rows)
+        if (rows[0]) setLang(rows[0].language)
+      })
+      .catch(() => {
+        if (active) setSummaries([])
+      })
+    return () => {
+      active = false
+    }
+  }, [token, imageId])
+
+  async function toggleVoice() {
+    if (playing) {
+      audioRef.current?.pause()
+      setPlaying(false)
+      return
+    }
+    let url = audioUrl
+    if (!url) {
+      url = await fetchSummaryAudioUrl(imageId, lang, token)
+      setAudioUrl(url)
+    }
+    const audio = new Audio(url)
+    audioRef.current = audio
+    audio.onended = () => setPlaying(false)
+    setPlaying(true)
+    void audio.play().catch(() => setPlaying(false))
+  }
+
+  if (!summaries || summaries.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Your plain-language result is not ready yet — check back shortly.
+      </p>
+    )
+  }
+
+  const active = summaries.find((s) => s.language === lang) ?? summaries[0]
+
+  return (
+    <div className="rounded-lg border p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          Doctor&apos;s summary — your result
+        </p>
+        <div className="flex items-center gap-1">
+          {summaries.map((s) => (
+            <button
+              key={s.language}
+              type="button"
+              onClick={() => setLang(s.language)}
+              className={cn(
+                "rounded-md px-2.5 py-1 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
+                s.language === active.language
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:bg-muted hover:text-foreground",
+              )}
+            >
+              {s.language === "hi" ? "हिन्दी" : "English"}
+            </button>
+          ))}
+          {active.has_audio && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={toggleVoice}
+              aria-pressed={playing}
+            >
+              <Volume2 className="size-4" />
+              {playing ? "Stop" : "Listen"}
+            </Button>
+          )}
+        </div>
+      </div>
+      {!active.has_audio && (
+        <p className="text-xs text-muted-foreground">
+          A voice version isn&apos;t available for this language yet.
+        </p>
+      )}
+      <p className="mt-3 text-sm leading-relaxed">{active.summary_text}</p>
+    </div>
+  )
+}
 
 interface ProvenanceShape {
   classifier?: { model?: string; trained_on?: string; validation_qwk?: number | null }
@@ -86,6 +199,7 @@ function ModelProvenanceNote({ raw }: { raw: string }) {
 
 function FindingPanel({ finding, token }: { finding: FindingOut; token: string }) {
   const [preview, setPreview] = React.useState<string | null>(null)
+  const [status, setStatus] = React.useState<PatientStatus | null>(null)
 
   React.useEffect(() => {
     let active = true
@@ -101,13 +215,28 @@ function FindingPanel({ finding, token }: { finding: FindingOut; token: string }
     }
   }, [finding.image_id, token])
 
-  const lesions = parseLesions(finding.lesion_list)
-  const statusLabel =
-    finding.analysis_status === "completed"
-      ? "Completed"
-      : finding.analysis_status === "failed"
-        ? "Failed"
-        : "Queued"
+  // Phase 4 — patient status is server-derived; poll until reviewed so the
+  // page updates without a manual refresh when the doctor signs off.
+  React.useEffect(() => {
+    if (!token) return
+    let stopped = false
+    async function poll() {
+      try {
+        const next = await telemedApi.scanStatus(token, finding.image_id)
+        if (!stopped) setStatus(next)
+      } catch {
+        // scan not ready yet — keep polling
+      }
+    }
+    poll()
+    const id = window.setInterval(poll, 25000)
+    return () => {
+      stopped = true
+      window.clearInterval(id)
+    }
+  }, [token, finding.image_id])
+
+  const stage = status ? STAGE_META[status.state] : null
 
   return (
     <Card>
@@ -119,9 +248,23 @@ function FindingPanel({ finding, token }: { finding: FindingOut; token: string }
               Analyzed {finding.analyzed_at ? new Date(finding.analyzed_at).toLocaleString() : "—"}
             </CardDescription>
           </div>
-          <Badge tone={statusLabel === "Failed" ? "destructive" : statusLabel === "Completed" ? "success" : "accent"}>
-            {statusLabel}
-          </Badge>
+          {status ? (
+            <Badge
+              tone={
+                status.state === "reviewed"
+                  ? "success"
+                  : status.state === "awaiting_review"
+                    ? "warning"
+                    : "accent"
+              }
+            >
+              {status.stage_label}
+            </Badge>
+          ) : (
+            <Badge tone="accent">
+              {finding.analysis_status === "completed" ? "Processing" : finding.analysis_status}
+            </Badge>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -131,12 +274,36 @@ function FindingPanel({ finding, token }: { finding: FindingOut; token: string }
             <AlertTitle>Analysis did not complete</AlertTitle>
             <AlertDescription>
               The screening result is unavailable. Please contact your health
-              centre.
+              centre for a new scan.
             </AlertDescription>
           </Alert>
         )}
 
-        {finding.analysis_status === "completed" && finding.icdr_grade !== null && (
+        {status && (
+          <div className="mb-4 flex items-start gap-3 rounded-lg border p-4">
+            {stage &&
+              React.createElement(stage.icon, {
+                className: cn(
+                  "mt-0.5 size-5 shrink-0 text-primary",
+                  stage.spin && "animate-spin",
+                ),
+                "aria-hidden": true,
+              })}
+            <div className="flex flex-col gap-0.5">
+              <p className="font-heading text-base font-bold">{status.stage_label}</p>
+              <p className="text-sm text-muted-foreground">{status.patient_text}</p>
+              {status.state === "reviewed" && status.revised_grade != null && status.signed_decision === "Revised" && (
+                <p className="mt-1 rounded-md bg-muted/60 px-2 py-1 text-sm">
+                  The doctor revised the severity to{" "}
+                  <strong>{gradeLabels[status.revised_grade] ?? status.revised_grade}</strong>{" "}
+                  (grade {status.revised_grade}).
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
+        {finding.analysis_status === "completed" && finding.icdr_grade !== null && status?.state !== "reviewed" && (
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg bg-muted/60 p-3">
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -157,28 +324,6 @@ function FindingPanel({ finding, token }: { finding: FindingOut; token: string }
                 {finding.consistency_status}
               </Badge>
             </div>
-            <div className="rounded-lg bg-muted/60 p-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Lesion types
-              </p>
-              <p className="mt-1 text-sm">
-                {lesions.length === 0
-                  ? "None detected"
-                  : lesions
-                      .map((l) => `${l.type} × ${l.count}`)
-                      .join(", ")}
-              </p>
-            </div>
-            <div className="rounded-lg bg-muted/60 p-3">
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Confidence
-              </p>
-              <p className="mt-1 text-sm">
-                {finding.icdr_confidence !== null
-                  ? `${Math.round(finding.icdr_confidence * 100)}%`
-                  : "—"}
-              </p>
-            </div>
           </div>
         )}
 
@@ -186,31 +331,22 @@ function FindingPanel({ finding, token }: { finding: FindingOut; token: string }
           <ModelProvenanceNote raw={finding.model_provenance} />
         )}
 
-        {finding.analysis_status === "completed" && (
-          <div className="mt-4">
-            <h3 className="mb-2 font-heading text-sm font-semibold">
-              Your explainable screening report
-            </h3>
-            <ScreeningReportPanel imageId={finding.image_id} token={token ?? ""} variant="patient" />
-          </div>
-        )}
-
-        {finding.analysis_status === "completed" && (
-          <div className="mt-4 rounded-lg border border-dashed p-3 opacity-70">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Phase 4 &amp; beyond — Coming Next
-            </p>
-            <ul className="mt-1.5 list-disc space-y-1 pl-4 text-xs text-muted-foreground">
-              <li>Telemedicine / doctor sign-off dashboard and ABDM sync</li>
-              <li>Local-language and voice report output</li>
-            </ul>
+        {finding.analysis_status === "completed" && status?.state === "reviewed" && (
+          <div className="space-y-4">
+            <SummariesSection imageId={finding.image_id} token={token} />
+            <div>
+              <h3 className="mb-2 font-heading text-sm font-semibold">
+                Your explainable screening report
+              </h3>
+              <ScreeningReportPanel imageId={finding.image_id} token={token} variant="patient" />
+            </div>
           </div>
         )}
 
         {finding.analysis_status === "queued" && (
           <p className="text-sm text-muted-foreground">
-            This scan is queued for analysis and will appear here once the
-            report is ready.
+            This scan is queued and will move to &ldquo;Scan received&rdquo;
+            shortly.
           </p>
         )}
 

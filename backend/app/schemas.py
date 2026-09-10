@@ -118,4 +118,70 @@ class ReportOut(BaseModel):
     generated_at: Optional[datetime] = None
 
 
+# ---------- Phase 4 — Telemedicine ----------
+class DoctorQueueItem(BaseModel):
+    image_id: str
+    patient_id: int
+    patient_name: str
+    icdr_grade: Optional[int] = None
+    icdr_confidence: Optional[float] = None
+    consistency_status: str = "pending"
+    sync_status: str = "queued"  # queued | syncing | synced | failed
+    viewed: bool = False
+    signed_off: bool = False
+    signed_decision: Optional[str] = None
+    analyzed_at: Optional[datetime] = None
+
+
+class DoctorQueueCount(BaseModel):
+    unseen: int
+    unseen_flagged: int
+
+
+class SignOffIn(BaseModel):
+    image_id: str
+    decision: str  # Approved | Revised | Rejected
+    doctor_notes: Optional[str] = None
+    revised_grade: Optional[int] = None  # required when decision == "Revised"
+
+
+class SignOffOut(BaseModel):
+    image_id: str
+    decision: str
+    doctor_notes: Optional[str] = None
+    revised_grade: Optional[int] = None
+    signed_at: datetime
+    summary_languages: list[str] = []
+
+
+class SyncStatus(BaseModel):
+    pending: int
+    syncing: int
+    synced: int
+    failed: int
+    total: int
+    offline_sim: bool
+
+
+class OfflineSimIn(BaseModel):
+    enabled: bool
+
+
+class PatientStatusOut(BaseModel):
+    image_id: str
+    state: str  # scan_received | analysis_in_progress | awaiting_review | reviewed
+    stage_label: str
+    patient_text: str
+    summary_languages: list[str] = []
+    signed_off: bool = False
+    signed_decision: Optional[str] = None
+    revised_grade: Optional[int] = None
+
+
+class SummaryOut(BaseModel):
+    language: str
+    summary_text: str
+    has_audio: bool = False
+
+
 TokenResponse.model_rebuild()
