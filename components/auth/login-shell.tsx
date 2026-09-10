@@ -2,7 +2,6 @@
 
 import * as React from "react"
 import { Eye } from "lucide-react"
-import { cn } from "cn"
 
 type LoginShellMode = "user" | "admin"
 
@@ -13,11 +12,11 @@ interface LoginShellProps {
 
 const modeConfig = {
   user: {
-    title: "Sign in to RetinaCare",
+    title: "Sign in to NetraScan",
     subtitle: "Access your screening portal",
   },
   admin: {
-    title: "RetinaCare Administration",
+    title: "NetraScan Administration",
     subtitle: "Authorized administrator access only",
   },
 }
@@ -35,7 +34,7 @@ export function LoginShell({ children, mode }: LoginShellProps) {
             <Eye className="size-5 text-white" />
           </div>
           <span className="font-heading text-lg font-semibold tracking-tight text-white">
-            RetinaCare
+            NetraScan
           </span>
         </div>
 
@@ -47,7 +46,7 @@ export function LoginShell({ children, mode }: LoginShellProps) {
                 <Eye className="size-6 text-white" />
               </div>
               <span className="font-heading text-xl font-semibold tracking-tight text-white">
-                RetinaCare
+                NetraScan
               </span>
             </div>
 
@@ -68,7 +67,7 @@ export function LoginShell({ children, mode }: LoginShellProps) {
           <div className="mt-5 min-h-0 flex-1 overflow-hidden rounded-xl bg-white/10">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/images/retinacare-consultation.svg"
+              src="/images/netrascan-consultation.svg"
               alt="An eye-care professional conducting a vision screening in a rural Indian setting"
               className="h-full w-full object-cover object-top"
               loading="eager"
@@ -76,7 +75,7 @@ export function LoginShell({ children, mode }: LoginShellProps) {
           </div>
 
           <p className="mt-3 text-xs leading-relaxed text-white/50">
-            RetinaCare &mdash; a concept by Binary Bandits, Smart India Hackathon 2026
+            NetraScan &mdash; a concept by Binary Bandits, Smart India Hackathon 2026
           </p>
         </div>
       </div>
@@ -90,7 +89,7 @@ export function LoginShell({ children, mode }: LoginShellProps) {
               <Eye className="size-4.5 text-primary-foreground" />
             </div>
             <span className="font-heading text-base font-semibold tracking-tight text-foreground">
-              RetinaCare
+              NetraScan
             </span>
           </div>
 
@@ -108,7 +107,7 @@ export function LoginShell({ children, mode }: LoginShellProps) {
           {/* Footer credit */}
           <div className="mt-8 border-t border-border pt-5 text-xs text-muted-foreground lg:hidden">
             <p>
-              RetinaCare &mdash; Binary Bandits / Smart India Hackathon 2026
+              NetraScan &mdash; Binary Bandits / Smart India Hackathon 2026
             </p>
           </div>
         </div>

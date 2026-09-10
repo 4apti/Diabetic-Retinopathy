@@ -1,8 +1,9 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { Eye, EyeOff, HelpCircle, KeyRound } from "lucide-react"
+import { Eye, EyeOff, HelpCircle, Info } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -25,29 +26,38 @@ import {
 } from "@/components/ui/dialog"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Spinner } from "@/components/ui/spinner"
+import { authApi, ApiError } from "@/lib/api"
+import { defaultRoleLanding, useSession } from "@/lib/session"
 
 export type LoginFormMode = "user" | "admin"
 export type UserRole = "patient" | "worker" | "doctor"
 
+export interface LoginFormProps {
+  mode: LoginFormMode
+}
+
 const roleConfig: Record<
   UserRole,
-  { label: string; buttonLabel: string; context: string }
+  { label: string; buttonLabel: string; context: string; apiRole: string }
 > = {
   patient: {
     label: "Patient",
     buttonLabel: "Continue as Patient",
+    apiRole: "patient",
     context:
-      "You'll use this portal to book and track your own eye-care visits and screenings.",
+      "You'll access your own eye-care records, screening history, and referrals.",
   },
   worker: {
     label: "Health Worker",
     buttonLabel: "Continue as Health Worker",
+    apiRole: "health_worker",
     context:
       "You'll run village screenings, add patient records, and send referrals for specialist review.",
   },
   doctor: {
     label: "Doctor",
     buttonLabel: "Continue as Doctor",
+    apiRole: "doctor",
     context:
       "You'll review incoming screenings and support health workers with ophthalmologist guidance.",
   },
@@ -72,12 +82,10 @@ function validatePassword(password: string): string | null {
   return null
 }
 
-interface LoginFormProps {
-  mode: LoginFormMode
-}
-
 export function LoginForm({ mode }: LoginFormProps) {
   const isAdmin = mode === "admin"
+  const router = useRouter()
+  const { signIn } = useSession()
 
   const [role, setRole] = React.useState<UserRole>("patient")
   const [email, setEmail] = React.useState("")
@@ -87,6 +95,7 @@ export function LoginForm({ mode }: LoginFormProps) {
     email?: string | null
     password?: string | null
   }>({})
+  const [serverError, setServerError] = React.useState<string | null>(null)
 
   const [status, setStatus] = React.useState<
     "idle" | "submitting" | "submitted"
@@ -95,9 +104,7 @@ export function LoginForm({ mode }: LoginFormProps) {
   const [forgotOpen, setForgotOpen] = React.useState(false)
   const [helpOpen, setHelpOpen] = React.useState(false)
 
-  const roleContext = roleConfig[role]
-
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
 
     const emailError = validateEmail(email)
@@ -105,22 +112,46 @@ export function LoginForm({ mode }: LoginFormProps) {
     const nextErrors = { email: emailError, password: passwordError }
 
     setErrors(nextErrors)
+    setServerError(null)
 
     if (emailError || passwordError) {
       return
     }
 
     setStatus("submitting")
-    window.setTimeout(() => {
-      setStatus("submitted")
-      setSubmitOpen(true)
-    }, 900)
-  }
+    try {
+      const payload = await authApi.login(email, password)
 
-  function handleSubmitDialogChange(open: boolean) {
-    setSubmitOpen(open)
-    if (!open) {
-      setPassword("")
+      if (isAdmin) {
+        if (payload.user.role !== "admin") {
+          setServerError(
+            "That account is not an administrator. Use the user login for the dashboard you need.",
+          )
+          return
+        }
+      } else if (payload.user.role !== roleConfig[role].apiRole) {
+        const expected = roleConfig[role].label
+        setServerError(
+          `That account is registered as a ${
+            payload.user.role === "health_worker"
+              ? "Health Worker"
+              : payload.user.role === "doctor"
+                ? "Doctor"
+                : "Patient"
+          }. Switch the role toggle to ${expected} and try again.`,
+        )
+        return
+      }
+
+      signIn(payload)
+      setStatus("submitted")
+      router.push(defaultRoleLanding(payload.user.role))
+    } catch (error) {
+      const message =
+        error instanceof ApiError
+          ? error.detail ?? error.message
+          : "Unable to reach the NetraScan backend. Is the API server running?"
+      setServerError(message)
       setStatus("idle")
     }
   }
@@ -131,25 +162,24 @@ export function LoginForm({ mode }: LoginFormProps) {
 
   return (
     <div className="flex w-full flex-col gap-5">
-      {/* Design preview notice */}
+      {/* Demo backend notice */}
       <Alert variant="default" className="bg-secondary/40">
-        <HelpCircle className="text-primary" />
-        <AlertTitle>Design preview</AlertTitle>
+        <Info className="text-primary" />
+        <AlertTitle>Live demo backend</AlertTitle>
         <AlertDescription>
-          No data is submitted. Entering details here only demonstrates the
-          interface.
+          Credentials are checked against the NetraScan API. Demo accounts:
+          <br />
+          patient@example.org · worker@example.org · doctor@example.org ·
+          admin@netrascan.in (passwords end in &ldquo;123!&rdquo;).
         </AlertDescription>
       </Alert>
 
-      {/* Admin access notice */}
-      {isAdmin && (
-        <Alert variant="default" className="bg-secondary/40">
-          <KeyRound className="text-primary" />
-          <AlertTitle>Protected space — in a future build</AlertTitle>
-          <AlertDescription>
-            This administration page is a design preview. No access control is
-            implemented, so nothing here is protected or restricted.
-          </AlertDescription>
+      {/* Server error */}
+      {serverError && (
+        <Alert variant="destructive">
+          <HelpCircle />
+          <AlertTitle>Sign-in failed</AlertTitle>
+          <AlertDescription>{serverError}</AlertDescription>
         </Alert>
       )}
 
@@ -185,7 +215,7 @@ export function LoginForm({ mode }: LoginFormProps) {
               aria-live="polite"
               className="text-sm leading-relaxed text-muted-foreground"
             >
-              {roleContext.context}
+              {roleConfig[role].context}
             </p>
           </FieldGroup>
         )}
@@ -311,10 +341,12 @@ export function LoginForm({ mode }: LoginFormProps) {
           {status === "submitting"
             ? "Signing in…"
             : status === "submitted"
-              ? "Preview complete. No account was authenticated. The password has been cleared."
-              : errors.email || errors.password
-                ? "Please fix the highlighted fields."
-                : ""}
+              ? "Signed in. Redirecting to your dashboard."
+              : serverError
+                ? "Sign-in failed. Check the error message above."
+                : errors.email || errors.password
+                  ? "Please fix the highlighted fields."
+                  : ""}
         </span>
 
         {/* Cross-navigation */}
@@ -352,28 +384,27 @@ export function LoginForm({ mode }: LoginFormProps) {
           onClick={() => setHelpOpen(true)}
           className="text-sm text-muted-foreground underline-offset-4 outline-none hover:text-foreground hover:underline focus-visible:underline focus-visible:ring-2 focus-visible:ring-ring"
         >
-          About this prototype
+          What happens to my credentials?
         </button>
       </div>
 
-      {/* Submission feedback dialog */}
-      <Dialog open={submitOpen} onOpenChange={handleSubmitDialogChange}>
+      {/* Submission feedback dialog — only reached on unexpected navigation */}
+      <Dialog open={submitOpen} onOpenChange={setSubmitOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Preview sign-in</DialogTitle>
+            <DialogTitle>Signed in</DialogTitle>
             <DialogDescription>
               {isAdmin ? (
                 <>
-                  You approached the <strong>Administrator</strong> portal.
+                  You signed in to the <strong>Administrator</strong> portal.
                 </>
               ) : (
                 <>
-                  You approached the <strong>{roleConfig[role].label}</strong>{" "}
+                  You signed in to the <strong>{roleConfig[role].label}</strong>{" "}
                   portal.
                 </>
               )}{" "}
-              No account was authenticated and your password was not stored or
-              sent anywhere. This prototype only demonstrates the interface.
+              Redirecting to your dashboard.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter showCloseButton />
@@ -386,25 +417,26 @@ export function LoginForm({ mode }: LoginFormProps) {
           <DialogHeader>
             <DialogTitle>Password recovery isn&apos;t connected</DialogTitle>
             <DialogDescription>
-              This preview can&apos;t send reset emails, so no message was
-              dispatched. In a full build you would receive a secure reset link
-              at your registered email address.
+              Self-service password reset is not enabled yet, so no email was
+              dispatched. Contact your NetraScan administrator to reset your
+              password.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter showCloseButton />
         </DialogContent>
       </Dialog>
 
-      {/* Prototype help dialog */}
+      {/* Credentials dialog */}
       <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>About this prototype</DialogTitle>
+            <DialogTitle>What happens to my credentials?</DialogTitle>
             <DialogDescription>
-              These RetinaCare login screens are interactive frontend previews.
-              They do not connect to a database, create accounts, send emails,
-              authenticate anyone, or make medical assessments. Everything is
-              held in component memory and disappears when the page reloads.
+              Your password is sent over HTTPS to the NetraScan API, hashed
+              there with bcrypt, and verified against the demo database. The
+              returned bearer token is stored in this browser only for the
+              current session. No medical assessment is performed from the
+              login screen.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter showCloseButton />

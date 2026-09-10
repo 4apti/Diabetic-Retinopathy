@@ -1,0 +1,97 @@
+import json
+from datetime import datetime
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from ..database import get_db
+from ..deps import get_current_user
+from ..ml.consistency import check_consistency
+from ..ml.preprocessing import preprocess_image
+from ..ml.registry import registry
+from ..models import AIFinding, ImageUpload, User
+from ..schemas import FindingOut
+from PIL import Image
+
+router = APIRouter(prefix="/analyze", tags=["analyze"])
+
+
+@router.post("/{image_id}", response_model=FindingOut)
+def analyze_image(
+    image_id: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    upload = db.query(ImageUpload).filter(ImageUpload.image_id == image_id).first()
+    if upload is None:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    finding = db.query(AIFinding).filter(AIFinding.image_id == image_id).first()
+    if finding is None:
+        finding = AIFinding(image_id=image_id, analysis_status="queued")
+        db.add(finding)
+
+    finding.analysis_status = "running"
+    db.commit()
+
+    try:
+        if registry.classifier is None:
+            raise RuntimeError(
+                registry.classifier_error
+                or "Classifier weights not loaded — analysis unavailable"
+            )
+
+        image = Image.open(Path(upload.file_path)).convert("RGB")
+        tensor = preprocess_image(image, size=380)
+
+        # Engine B — EfficientNet-B0 severity classifier
+        cls_result = registry.classifier.predict(tensor)
+
+        # Engine A — YOLOv8 lesion detection (skipped honestly when unavailable)
+        lesion_counts: dict[str, int] = {}
+        lesion_list: list[dict] = []
+        if registry.detector is not None:
+            image_bytes = Path(upload.file_path).read_bytes()
+            det_result = registry.detector.predict(image_bytes)
+            lesion_counts = det_result.lesion_counts
+            lesion_list = [
+                {"type": label, "count": count} for label, count in sorted(lesion_counts.items())
+            ]
+
+        # Dual-engine consistency
+        if registry.detector is not None:
+            consistency = check_consistency(lesion_counts, cls_result.grade)
+        else:
+            consistency = "Classifier only"
+
+        provenance = {
+            "classifier": {
+                "model": "EfficientNet-B0",
+                "trained_on": registry.classifier._meta.get("trained_on", "unknown"),
+                "validation_qwk": registry.classifier._meta.get("validation_qwk"),
+            },
+            "detector": (
+                registry.detector.PROVENANCE
+                if registry.detector is not None
+                else "Lesion detector unavailable — analysis ran classifier-only"
+            ),
+        }
+
+        finding.lesion_list = json.dumps(lesion_list)
+        finding.lesion_count = det_result.total_count
+        finding.icdr_grade = cls_result.grade
+        finding.icdr_confidence = round(cls_result.confidence, 4)
+        finding.consistency_status = consistency
+        finding.analysis_status = "completed"
+        finding.model_provenance = json.dumps(provenance)
+        finding.error = None
+        finding.analyzed_at = datetime.utcnow()
+        db.commit()
+        return FindingOut.model_validate(finding)
+
+    except Exception as exc:  # noqa: BLE001 — surface as a failed analysis honestly
+        finding.analysis_status = "failed"
+        finding.error = str(exc)
+        db.commit()
+        raise HTTPException(status_code=503, detail=f"Analysis failed: {exc}")

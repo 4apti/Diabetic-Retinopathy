@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Playfair_Display } from "next/font/google";
+import { SessionProvider } from "@/lib/session";
 import "./globals.css";
 
 const inter = Inter({
@@ -16,11 +17,11 @@ const playfair = Playfair_Display({
 
 export const metadata: Metadata = {
   title: {
-    default: "RetinaCare",
-    template: "%s | RetinaCare",
+    default: "NetraScan",
+    template: "%s | NetraScan",
   },
   description:
-    "A clearer future for every eye. RetinaCare connects rural communities with expert ophthalmologists through accessible screening and review.",
+    "A clearer future for every eye. NetraScan connects rural communities with expert ophthalmologists through accessible screening and review.",
   icons: {
     icon: "/icon.svg",
   },
@@ -39,7 +40,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${inter.variable} ${playfair.variable} antialiased`}
     >
       <body className="min-h-dvh flex flex-col bg-background text-foreground">
-        {children}
+        <SessionProvider>{children}</SessionProvider>
       </body>
     </html>
   );

@@ -6,7 +6,7 @@ import { LoginForm } from "@/components/auth/login-form"
 export const metadata: Metadata = {
   title: "Admin login",
   description:
-    "RetinaCare administration login. Interactive frontend preview only — no access control is implemented.",
+    "NetraScan administration login. Interactive frontend preview only — no access control is implemented.",
 }
 
 export default function AdminLoginPage() {

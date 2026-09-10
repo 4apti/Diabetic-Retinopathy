@@ -1,0 +1,199 @@
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api"
+
+export class ApiError extends Error {
+  status: number
+  detail?: string
+
+  constructor(message: string, status: number, detail?: string) {
+    super(message)
+    this.name = "ApiError"
+    this.status = status
+    this.detail = detail
+  }
+}
+
+/**
+ * Thin typed wrapper around the NetraScan FastAPI backend.
+ * Throws ApiError with the backend `detail` message when a request fails.
+ */
+export async function apiFetch<T>(
+  path: string,
+  init: RequestInit = {},
+  token?: string,
+): Promise<T> {
+  const headers: Record<string, string> = {
+    ...(init.body instanceof FormData
+      ? {}
+      : { "Content-Type": "application/json" }),
+    ...(init.headers as Record<string, string>),
+  }
+  if (token) {
+    headers.Authorization = `Bearer ${token}`
+  }
+
+  const response = await fetch(`${API_BASE_URL}${path}`, { ...init, headers })
+
+  if (!response.ok) {
+    let detail: string | undefined
+    try {
+      const body = await response.json()
+      detail = typeof body.detail === "string" ? body.detail : undefined
+    } catch {
+      // non-JSON error body — keep undefined detail
+    }
+    const error = new ApiError(
+      detail ?? `Request failed (${response.status})`,
+      response.status,
+      detail,
+    )
+    throw error
+  }
+
+  return (await response.json()) as T
+}
+
+export interface UserOut {
+  id: number
+  email: string
+  full_name: string
+  role: "patient" | "health_worker" | "doctor" | "admin"
+}
+
+export interface TokenResponse {
+  access_token: string
+  token_type: string
+  user: UserOut
+}
+
+export interface FindingOut {
+  image_id: string
+  lesion_list: string | { type: string; count: number }[]
+  lesion_count: number
+  icdr_grade: number | null
+  icdr_confidence: number | null
+  consistency_status: string
+  analysis_status: string
+  analyzed_at: string | null
+  model_provenance?: string | null
+}
+
+export interface UploadOut {
+  image_id: string
+  patient_id: number
+  filename: string
+  quality_status: string
+  quality_score: number | null
+  uploaded_at: string
+  findings: FindingOut[]
+}
+
+export interface PatientOut {
+  id: number
+  full_name: string
+  age: number | null
+  gender: string | null
+  village: string | null
+  district: string | null
+  phone: string | null
+  created_at: string
+}
+
+export interface RoleStats {
+  total_patients: number
+  total_scans: number
+  scans_analyzed: number
+  scans_pending: number
+  flagged_for_review: number
+  grade_distribution: Record<string, number>
+}
+
+export interface ReviewQueueItem {
+  image_id: string
+  patient_name: string
+  patient_id: number | null
+  icdr_grade: number | null
+  icdr_confidence: number | null
+  lesion_count: number | null
+  lesion_list: string | null
+  consistency_status: string
+  analysis_status: string
+  analyzed_at: string | null
+  model_provenance?: string | null
+}
+
+export interface ModelInfo {
+  name: string
+  family: string
+  task: string
+  trained_on: string
+  fine_tuned: boolean
+  weights: boolean
+  weights_path: string
+  validation: Record<string, unknown>
+  note: string
+}
+
+export const authApi = {
+  login: (email: string, password: string) =>
+    apiFetch<TokenResponse>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
+    }),
+  me: (token: string) => apiFetch<UserOut>("/auth/me", {}, token),
+}
+
+export const patientsApi = {
+  self: (token: string) => apiFetch<PatientOut>("/patients/self", {}, token),
+  list: (token: string) => apiFetch<PatientOut[]>("/patients", {}, token),
+  create: (token: string, patient: Record<string, unknown>) =>
+    apiFetch<PatientOut>("/patients", {
+      method: "POST",
+      body: JSON.stringify(patient),
+    }, token),
+  scans: (token: string, patientId: number) =>
+    apiFetch<UploadOut[]>(`/patients/${patientId}/scans`, {}, token),
+}
+
+export const uploadsApi = {
+  create: (token: string, patientId: number, file: File) => {
+    const form = new FormData()
+    form.append("patient_id", String(patientId))
+    form.append("file", file)
+    return apiFetch<UploadOut>("/uploads", { method: "POST", body: form }, token)
+  },
+  get: (token: string, imageId: string) =>
+    apiFetch<UploadOut>(`/uploads/${imageId}`, {}, token),
+  analyze: (token: string, imageId: string) =>
+    apiFetch<FindingOut>(`/analyze/${imageId}`, { method: "POST" }, token),
+}
+
+export const dashboardApi = {
+  stats: (token: string) => apiFetch<RoleStats>("/stats", {}, token),
+  reviewQueue: (token: string) =>
+    apiFetch<ReviewQueueItem[]>("/review-queue", {}, token),
+  models: (token: string) => apiFetch<ModelInfo[]>("/models", {}, token),
+}
+
+export function scanImageUrl(imageId: string): string {
+  return `${API_BASE_URL}/uploads/${imageId}/image`
+}
+
+/**
+ * Fetches a stored scan as a blob and returns an object URL. Must be called
+ * from the browser because it authenticates with the session bearer token,
+ * which an <img src> request cannot supply.
+ */
+export async function fetchScanBlobUrl(
+  imageId: string,
+  token: string,
+): Promise<string> {
+  const response = await fetch(scanImageUrl(imageId), {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+  if (!response.ok) {
+    throw new Error(`Unable to load scan image (${response.status})`)
+  }
+  const blob = await response.blob()
+  return URL.createObjectURL(blob)
+}

@@ -6,7 +6,7 @@ import { LoginForm } from "@/components/auth/login-form"
 export const metadata: Metadata = {
   title: "Sign in",
   description:
-    "Sign in to RetinaCare as a patient, health worker, or doctor. Interactive frontend preview only.",
+    "Sign in to NetraScan as a patient, health worker, or doctor. Interactive frontend preview only.",
 }
 
 export default function LoginPage() {

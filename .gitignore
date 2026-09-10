@@ -40,3 +40,13 @@ dev.log
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# backend runtime + generated artifacts
+backend/__pycache__/
+**/__pycache__/
+backend/*.pyc
+backend/uploads/
+backend/netrascan.db
+backend/models/*.pt
+backend/*.pt
+*.log

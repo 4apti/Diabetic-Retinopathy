@@ -1,0 +1,51 @@
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from . import models  # noqa: F401 — ensure ORM models are registered
+from .config import settings
+from .database import Base, engine
+from .ml.registry import registry
+from .routers import analyze, auth, dashboard, patients, uploads
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
+    registry.load()
+    yield
+
+
+app = FastAPI(
+    title=settings.app_name,
+    version=settings.app_version,
+    description="NetraScan — automated DR analysis & explainable diagnostic platform (SIH 2026)",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+for router in (auth.router, patients.router, uploads.router, analyze.router, dashboard.router):
+    app.include_router(router, prefix=settings.api_prefix)
+
+
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "app": settings.app_name,
+        "classifier_ready": registry.classifier is not None,
+        "detector_ready": registry.detector is not None,
+    }
