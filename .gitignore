@@ -53,3 +53,6 @@ backend/*.pt
 backend/demo_samples/*.png
 runs/
 *.pt.meta.json
+
+# stray build artifacts
+backend/.next/
