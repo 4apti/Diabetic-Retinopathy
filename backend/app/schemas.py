@@ -182,6 +182,7 @@ class SummaryOut(BaseModel):
     language: str
     summary_text: str
     has_audio: bool = False
+    content_version: str | None = None
 
 
 TokenResponse.model_rebuild()

@@ -227,6 +227,7 @@ export interface PatientSummary {
   language: string
   summary_text: string
   has_audio: boolean
+  content_version?: string
 }
 
 export const authApi = {
@@ -306,17 +307,24 @@ export const telemedApi = {
     apiFetch<PatientSummary[]>(`/summaries/${imageId}`, {}, token),
 }
 
-export function summaryAudioUrl(imageId: string, language: string): string {
-  return `${API_BASE_URL}/summaries/${imageId}/${language}/audio`
+export function summaryAudioUrl(
+  imageId: string,
+  language: string,
+  contentVersion?: string,
+): string {
+  const base = `${API_BASE_URL}/summaries/${imageId}/${language}/audio`
+  return contentVersion ? `${base}?v=${encodeURIComponent(contentVersion)}` : base
 }
 
 export async function fetchSummaryAudioUrl(
   imageId: string,
   language: string,
   token: string,
+  contentVersion?: string,
 ): Promise<string> {
-  const response = await fetch(summaryAudioUrl(imageId, language), {
+  const response = await fetch(summaryAudioUrl(imageId, language, contentVersion), {
     headers: { Authorization: `Bearer ${token}` },
+    cache: "no-store",
   })
   if (!response.ok) throw new Error(`No audio clip (${response.status})`)
   const blob = await response.blob()

@@ -139,7 +139,12 @@ function SummariesSection({
       play(cached)
       return
     }
-    const url = await fetchSummaryAudioUrl(imageId, lang, token)
+    const url = await fetchSummaryAudioUrl(
+      imageId,
+      lang,
+      token,
+      active.content_version,
+    )
     setAudioUrls((m) => ({ ...m, [lang]: url }))
     play(url)
   }

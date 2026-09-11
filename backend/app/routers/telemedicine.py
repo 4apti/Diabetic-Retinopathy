@@ -321,6 +321,7 @@ def list_summaries(
             language=r.language,
             summary_text=r.summary_text,
             has_audio=bool(r.audio_path and Path(r.audio_path).exists()),
+            content_version=str(r.generated_at),
         )
         for r in rows
     ]
@@ -348,4 +349,9 @@ def summary_audio(
     if not p.exists():
         raise HTTPException(status_code=404, detail="Audio file is missing")
     media_type = "audio/mpeg" if p.suffix == ".mp3" else "audio/wav"
-    return FileResponse(p, media_type=media_type, filename=f"{image_id}_{language}{p.suffix}")
+    return FileResponse(
+        p,
+        media_type=media_type,
+        filename=f"{image_id}_{language}{p.suffix}",
+        headers={"Cache-Control": "no-store"},
+    )
