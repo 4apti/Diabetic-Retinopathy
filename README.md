@@ -176,8 +176,9 @@ sign-off → patient summary in their language, with voice.**
   pre-generated Windows SAPI (System.Speech) WAVs per case/language, served
   via an access-controlled endpoint with an in-page play button. No live TTS
   call, no new packages. If the machine lacks a SAPI voice for a language
-  (as it does for Hindi on the demo machine), that summary still shows its
-  full text but no play button is offered (`has_audio = false`).
+  (as it does for Hindi on the demo machine), the patient dashboard falls
+  back to the browser's Web Speech API for Hindi playback — this ensures
+  Hindi voice works even without a Windows SAPI Hindi voice installed.
   - **Translations note**: the Hindi template copy was authored by a non-native
     writer and should be reviewed by a fluent Hindi speaker before any
     production use (flagged in the code too).

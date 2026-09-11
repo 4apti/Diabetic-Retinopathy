@@ -63,7 +63,9 @@ function SummariesSection({
   const [lang, setLang] = React.useState("en")
   const [audioUrls, setAudioUrls] = React.useState<Record<string, string>>({})
   const [playing, setPlaying] = React.useState(false)
+  const [browserSpeaking, setBrowserSpeaking] = React.useState(false)
   const audioRef = React.useRef<HTMLAudioElement | null>(null)
+  const synthRef = React.useRef<SpeechSynthesisUtterance | null>(null)
 
   React.useEffect(() => {
     let active = true
@@ -85,6 +87,7 @@ function SummariesSection({
   React.useEffect(
     () => () => {
       audioRef.current?.pause()
+      window.speechSynthesis?.cancel()
     },
     [],
   )
@@ -92,24 +95,43 @@ function SummariesSection({
   function switchLang(next: string) {
     if (next === lang) return
     audioRef.current?.pause()
+    window.speechSynthesis?.cancel()
     setPlaying(false)
+    setBrowserSpeaking(false)
     setLang(next)
   }
 
   function play(url: string) {
     audioRef.current?.pause()
+    window.speechSynthesis?.cancel()
     const audio = new Audio(url)
     audioRef.current = audio
     audio.onended = () => setPlaying(false)
     audio.onerror = () => setPlaying(false)
     setPlaying(true)
+    setBrowserSpeaking(false)
     void audio.play().catch(() => setPlaying(false))
+  }
+
+  function speakBrowser(text: string, language: string) {
+    window.speechSynthesis?.cancel()
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.lang = language === "hi" ? "hi-IN" : "en-US"
+    utterance.rate = 0.9
+    utterance.onend = () => setBrowserSpeaking(false)
+    utterance.onerror = () => setBrowserSpeaking(false)
+    synthRef.current = utterance
+    setBrowserSpeaking(true)
+    setPlaying(true)
+    window.speechSynthesis?.speak(utterance)
   }
 
   async function toggleVoice() {
     if (playing) {
       audioRef.current?.pause()
+      window.speechSynthesis?.cancel()
       setPlaying(false)
+      setBrowserSpeaking(false)
       return
     }
     const cached = audioUrls[lang]
@@ -154,7 +176,7 @@ function SummariesSection({
               {s.language === "hi" ? "हिन्दी" : "English"}
             </button>
           ))}
-          {active.has_audio && (
+          {active.has_audio ? (
             <Button
               variant="outline"
               size="sm"
@@ -164,10 +186,28 @@ function SummariesSection({
               <Volume2 className="size-4" />
               {playing ? "Stop" : "Listen"}
             </Button>
-          )}
+          ) : typeof window !== "undefined" && "speechSynthesis" in window ? (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (browserSpeaking) {
+                  window.speechSynthesis?.cancel()
+                  setBrowserSpeaking(false)
+                  setPlaying(false)
+                } else {
+                  speakBrowser(active.summary_text, active.language)
+                }
+              }}
+              aria-pressed={browserSpeaking}
+            >
+              <Volume2 className="size-4" />
+              {browserSpeaking ? "Stop" : "Listen (browser)"}
+            </Button>
+          ) : null}
         </div>
       </div>
-      {!active.has_audio && (
+      {!active.has_audio && typeof window !== "undefined" && !("speechSynthesis" in window) && (
         <p className="text-xs text-muted-foreground">
           A voice version isn&apos;t available for this language yet.
         </p>
