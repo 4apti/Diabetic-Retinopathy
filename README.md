@@ -175,7 +175,9 @@ sign-off → patient summary in their language, with voice.**
   doctor's `revised_grade` when a case was Revised. Voice is **offline** —
   pre-generated Windows SAPI (System.Speech) WAVs per case/language, served
   via an access-controlled endpoint with an in-page play button. No live TTS
-  call, no new packages.
+  call, no new packages. If the machine lacks a SAPI voice for a language
+  (as it does for Hindi on the demo machine), that summary still shows its
+  full text but no play button is offered (`has_audio = false`).
   - **Translations note**: the Hindi template copy was authored by a non-native
     writer and should be reviewed by a fluent Hindi speaker before any
     production use (flagged in the code too).

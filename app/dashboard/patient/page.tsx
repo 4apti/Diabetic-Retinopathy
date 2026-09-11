@@ -61,7 +61,7 @@ function SummariesSection({
 }) {
   const [summaries, setSummaries] = React.useState<PatientSummary[] | null>(null)
   const [lang, setLang] = React.useState("en")
-  const [audioUrl, setAudioUrl] = React.useState<string | null>(null)
+  const [audioUrls, setAudioUrls] = React.useState<Record<string, string>>({})
   const [playing, setPlaying] = React.useState(false)
   const audioRef = React.useRef<HTMLAudioElement | null>(null)
 
@@ -82,22 +82,44 @@ function SummariesSection({
     }
   }, [token, imageId])
 
+  React.useEffect(
+    () => () => {
+      audioRef.current?.pause()
+    },
+    [],
+  )
+
+  function switchLang(next: string) {
+    if (next === lang) return
+    audioRef.current?.pause()
+    setPlaying(false)
+    setLang(next)
+  }
+
+  function play(url: string) {
+    audioRef.current?.pause()
+    const audio = new Audio(url)
+    audioRef.current = audio
+    audio.onended = () => setPlaying(false)
+    audio.onerror = () => setPlaying(false)
+    setPlaying(true)
+    void audio.play().catch(() => setPlaying(false))
+  }
+
   async function toggleVoice() {
     if (playing) {
       audioRef.current?.pause()
       setPlaying(false)
       return
     }
-    let url = audioUrl
-    if (!url) {
-      url = await fetchSummaryAudioUrl(imageId, lang, token)
-      setAudioUrl(url)
+    const cached = audioUrls[lang]
+    if (cached) {
+      play(cached)
+      return
     }
-    const audio = new Audio(url)
-    audioRef.current = audio
-    audio.onended = () => setPlaying(false)
-    setPlaying(true)
-    void audio.play().catch(() => setPlaying(false))
+    const url = await fetchSummaryAudioUrl(imageId, lang, token)
+    setAudioUrls((m) => ({ ...m, [lang]: url }))
+    play(url)
   }
 
   if (!summaries || summaries.length === 0) {
@@ -121,7 +143,7 @@ function SummariesSection({
             <button
               key={s.language}
               type="button"
-              onClick={() => setLang(s.language)}
+              onClick={() => switchLang(s.language)}
               className={cn(
                 "rounded-md px-2.5 py-1 text-xs font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
                 s.language === active.language

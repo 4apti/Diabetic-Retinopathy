@@ -118,16 +118,23 @@ def build_summary_text(
 
 
 def _synth_wav(text: str, lang: str, out_path: Path) -> bool:
-    """Offline TTS via Windows System.Speech (SAPI). Best-effort, cached once."""
+    """Offline TTS via Windows System.Speech (SAPI). Best-effort, cached once.
+
+    Only a voice matching the requested language is acceptable: a Hindi clip
+    must be read by a Hindi voice. If no such voice is installed we return
+    False so the UI shows "voice not available in this language" instead of
+    silently playing a wrong-language clip.
+    """
     if out_path.exists() and out_path.stat().st_size > 0:
         return True
     try:
-        voice_match = "hi|Hindi|IN" if lang == "hi" else "en-US|en-GB|English"
+        lang_prefix = "hi" if lang == "hi" else "en"
         script = (
             "Add-Type -AssemblyName System.Speech\n"
             "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer\n"
-            "$v = $s.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture -match '" + voice_match + "' } | Select-Object -First 1\n"
-            "if ($v) { $s.SelectVoice($v.VoiceInfo.Name) }\n"
+            "$v = $s.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -like '" + lang_prefix + "*' } | Select-Object -First 1\n"
+            "if (-not $v) { $s.Dispose(); Write-Output 'NO_VOICE_FOR_" + lang_prefix.upper() + "'; exit 3 }\n"
+            "$s.SelectVoice($v.VoiceInfo.Name)\n"
             "$s.SetOutputToWaveFile('" + str(out_path).replace("'", "''") + "')\n"
             "$s.Speak('" + text.replace("'", "''") + "')\n"
             "$s.Dispose()\n"
@@ -139,8 +146,11 @@ def _synth_wav(text: str, lang: str, out_path: Path) -> bool:
         result = subprocess.run(
             ["powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", encoded],
             capture_output=True,
-            timeout=60,
+            timeout=120,
         )
+        if result.returncode == 3:
+            logger.warning("no SAPI voice installed for language '%s' — audio skipped", lang)
+            return False
         ok = result.returncode == 0 and out_path.exists() and out_path.stat().st_size > 0
         if not ok:
             logger.warning("SAPI synth failed (%s): %s", lang, result.stderr.decode(errors="ignore")[:200])
