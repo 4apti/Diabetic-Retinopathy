@@ -51,3 +51,5 @@ backend/models/*.pt
 backend/*.pt
 *.log
 backend/demo_samples/*.png
+runs/
+*.pt.meta.json

@@ -76,6 +76,16 @@ EMBEDDED_DISCLAIMER = (
 LOW_RAM_GRADCAM_FLOOR_MB = 1500  # keep the training process alive during Phase 2
 
 
+def _gradcam_ram_floor_mb() -> int:
+    """Overridable via NETRASCAN_RAM_FLOOR_MB (0 = always allow heatmaps)."""
+    import os
+
+    try:
+        return int(os.environ.get("NETRASCAN_RAM_FLOOR_MB", LOW_RAM_GRADCAM_FLOOR_MB))
+    except (TypeError, ValueError):
+        return LOW_RAM_GRADCAM_FLOOR_MB
+
+
 def _free_ram_mb() -> int:
     """Free physical RAM in MB on Windows (best-effort; 0 is never returned)."""
     try:
@@ -282,7 +292,7 @@ def ensure_report(
         and registry.classifier is not None
         and image_path is not None
         and image_path.exists()
-        and _free_ram_mb() >= LOW_RAM_GRADCAM_FLOOR_MB
+        and _free_ram_mb() >= _gradcam_ram_floor_mb()
     ):
         out = report_dir() / f"{finding.image_id}_gradcam.png"
         res = generate_gradcam(

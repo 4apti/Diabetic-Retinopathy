@@ -21,6 +21,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -105,6 +106,9 @@ def main() -> int:
         print("No boxes produced — check IDRiD folder layout.", file=sys.stderr)
         return 1
 
+    train_images = int(len(set(df["image"])) * 5 / 6)
+    val_images = int(len(set(df["image"])) * 1 / 6)
+
     # Write YOLO-format .txt labels next to a YOLO dataset YAML, then train.
     import yaml
     from ultralytics import YOLO
@@ -134,11 +138,31 @@ def main() -> int:
                 f.write(f"{int(r['cls'])} {r['x']} {r['y']} {r['w']} {r['h']}\n")
 
     yaml_path = dataset / "data.yaml"
+    train_dir = images_dir / "train"
+    val_dir = images_dir / "val"
+    lbl_train = labels_dir / "train"
+    lbl_val = labels_dir / "val"
+    for d in (train_dir, val_dir, lbl_train, lbl_val):
+        d.mkdir(exist_ok=True)
+
+    # Deterministic holdout split for the val: key (Ultralytics requires it).
+    sorted_imgs = sorted(images_dir.glob("*.jpg"))
+    for i, img_path in enumerate(sorted_imgs):
+        is_val = i % 6 == 0
+        dest_img = (val_dir if is_val else train_dir) / img_path.name
+        dest_lbl = (lbl_val if is_val else lbl_train) / (img_path.stem + ".txt")
+        lbl_src = labels_dir / (img_path.stem + ".txt")
+        if not dest_img.exists():
+            img_path.rename(dest_img)
+        if lbl_src.exists() and not dest_lbl.exists():
+            lbl_src.rename(dest_lbl)
+
     yaml_path.write_text(
         yaml.safe_dump(
             {
                 "path": str(dataset),
-                "train": "images",
+                "train": "images/train",
+                "val": "images/val",
                 "names": {0: "microaneurysm", 1: "hemorrhage", 2: "hard_exudate", 3: "soft_exudate"},
             },
             sort_keys=False,
@@ -158,7 +182,27 @@ def main() -> int:
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
         best.rename(out) if not out.exists() else None
+        import datetime as _dt
+        latest = out.with_suffix(".pt.meta.json") if out.suffix == ".pt" else out.with_suffix(out.suffix + ".meta.json")
+        mu = model.trainer.metrics or {}
+        map50 = mu.get("metrics/mAP50(B)", 0.0) or 0.0
+        latest.write_text(
+            json.dumps(
+                {
+                    "model": "YOLOv8n",
+                    "dataset": "IDRiD A. Segmentation (lesion masks -> YOLO boxes)",
+                    "train_images": train_images,
+                    "val_images": val_images,
+                    "lesion_boxes": len(df),
+                    "epochs": args.epochs,
+                    "val_map50": round(float(map50), 4),
+                    "training_date": _dt.date.today().isoformat(),
+                },
+                indent=2,
+            )
+        )
         print(f"Saved detector -> {out}")
+        print(f"Saved detector meta -> {latest}")
     return 0
 
 

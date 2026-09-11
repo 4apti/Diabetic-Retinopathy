@@ -9,7 +9,9 @@ The chosen provenance string is surfaced in the UI Model Info panel.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from ..config import settings
 
@@ -60,6 +62,27 @@ class DRDetector:
         ),
     }
 
+    @classmethod
+    def provenance_for(cls, weights_path) -> dict:
+        """Honest provenance: prefer the IDRiD fine-tune marker when present."""
+        marker = Path(weights_path).with_suffix(".pt.meta.json") if weights_path else None
+        if marker is not None and marker.exists():
+            try:
+                meta = json.loads(marker.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                meta = {}
+            if meta:
+                return {
+                    "option": "idrid_fine_tuned",
+                    "detail": (
+                        f"YOLOv8n fine-tuned in-house on the IDRiD lesion dataset "
+                        f"({meta.get('train_images')} train / {meta.get('val_images')} val "
+                        f"images, {meta.get('lesion_boxes')} boxes, val mAP50 "
+                        f"{meta.get('val_map50'):.3f}, {meta.get('training_date')})."
+                    ),
+                }
+        return cls.PROVENANCE
+
     def __init__(self, weights_path=None):
         self.weights_path = weights_path or settings.detector_weights
         self._model = None
@@ -79,6 +102,7 @@ class DRDetector:
             ) from exc
 
         self._model = YOLO(str(self.weights_path))
+        self.PROVENANCE = self.provenance_for(self.weights_path)
         return self
 
     def predict(self, image_bytes: bytes, conf: float = 0.25) -> DetectorResult:
