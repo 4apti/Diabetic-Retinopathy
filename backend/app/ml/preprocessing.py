@@ -32,8 +32,8 @@ def preprocess_image(image: Image.Image, size: int = 380) -> np.ndarray:
     """
     img_pp = _make_display_image(image, size)
     arr = img_pp.astype(np.float32) / 255.0
-    arr = (arr - IMAGE_MEAN[:, None, None]) / IMAGE_STD[:, None, None]
-    return arr.astype(np.float32)
+    arr = (arr - IMAGE_MEAN[None, None, :]) / IMAGE_STD[None, None, :]
+    return np.transpose(arr, (2, 0, 1)).astype(np.float32)
 
 
 def preprocess_image_display(image: Image.Image, size: int = 380) -> np.ndarray:
