@@ -125,15 +125,17 @@ def _synth_wav(text: str, lang: str, out_path: Path) -> bool:
     False so the UI shows "voice not available in this language" instead of
     silently playing a wrong-language clip.
     """
+    if lang == "hi":
+        return _synth_edge_tts(text, out_path)
     if out_path.exists() and out_path.stat().st_size > 0:
         return True
     try:
-        lang_prefix = "hi" if lang == "hi" else "en"
+        lang_prefix = "en"
         script = (
             "Add-Type -AssemblyName System.Speech\n"
             "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer\n"
             "$v = $s.GetInstalledVoices() | Where-Object { $_.VoiceInfo.Culture.Name -like '" + lang_prefix + "*' } | Select-Object -First 1\n"
-            "if (-not $v) { $s.Dispose(); Write-Output 'NO_VOICE_FOR_" + lang_prefix.upper() + "'; exit 3 }\n"
+            "if (-not $v) { $s.Dispose(); Write-Output 'NO_VOICE_FOR_EN'; exit 3 }\n"
             "$s.SelectVoice($v.VoiceInfo.Name)\n"
             "$s.SetOutputToWaveFile('" + str(out_path).replace("'", "''") + "')\n"
             "$s.Speak('" + text.replace("'", "''") + "')\n"
@@ -160,6 +162,34 @@ def _synth_wav(text: str, lang: str, out_path: Path) -> bool:
         return False
 
 
+def _synth_edge_tts(text: str, out_path: Path) -> bool:
+    """Hindi TTS via Microsoft Edge TTS (hi-IN-SwaraNeural). Best-effort, cached."""
+    mp3_path = out_path.with_suffix(".mp3")
+    if mp3_path.exists() and mp3_path.stat().st_size > 0:
+        return True
+    try:
+        import asyncio
+        import edge_tts
+
+        voice = "hi-IN-SwaraNeural"
+        mp3_path.parent.mkdir(parents=True, exist_ok=True)
+
+        async def _generate():
+            comm = edge_tts.Communicate(text, voice)
+            await comm.save(str(mp3_path))
+
+        asyncio.run(_generate())
+        ok = mp3_path.exists() and mp3_path.stat().st_size > 0
+        if ok:
+            logger.info("edge-tts Hindi audio generated: %s", mp3_path)
+        else:
+            logger.warning("edge-tts produced empty file for Hindi")
+        return ok
+    except Exception as exc:
+        logger.warning("edge-tts Hindi synth failed: %s", exc)
+        return False
+
+
 def create_summaries(db: Session, image_id: str, sign_off: SignOff, ai_grade: int) -> list[PatientSummary]:
     """Generate + persist patient summaries (en + hi) after sign-off."""
     created: list[PatientSummary] = []
@@ -176,9 +206,12 @@ def create_summaries(db: Session, image_id: str, sign_off: SignOff, ai_grade: in
             hi=(lang == "hi"),
         )
         audio_path = None
+        mp3 = audio_dir / f"{image_id}_{lang}.mp3"
         wav = audio_dir / f"{image_id}_{lang}.wav"
         if _synth_wav(text, lang, wav):
-            audio_path = str(wav)
+            audio_path = str(wav if wav.exists() else mp3)
+        elif mp3.exists() and mp3.stat().st_size > 0:
+            audio_path = str(mp3)
 
         existing = (
             db.query(PatientSummary)

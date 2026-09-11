@@ -347,4 +347,5 @@ def summary_audio(
     p = Path(row.audio_path)
     if not p.exists():
         raise HTTPException(status_code=404, detail="Audio file is missing")
-    return FileResponse(p, media_type="audio/wav", filename=f"{image_id}_{language}.wav")
+    media_type = "audio/mpeg" if p.suffix == ".mp3" else "audio/wav"
+    return FileResponse(p, media_type=media_type, filename=f"{image_id}_{language}{p.suffix}")

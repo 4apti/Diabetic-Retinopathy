@@ -175,10 +175,11 @@ sign-off → patient summary in their language, with voice.**
   doctor's `revised_grade` when a case was Revised. Voice is **offline** —
   pre-generated Windows SAPI (System.Speech) WAVs per case/language, served
   via an access-controlled endpoint with an in-page play button. No live TTS
-  call, no new packages. If the machine lacks a SAPI voice for a language
-  (as it does for Hindi on the demo machine), the patient dashboard falls
-  back to the browser's Web Speech API for Hindi playback — this ensures
-  Hindi voice works even without a Windows SAPI Hindi voice installed.
+  call, no new packages. Hindi audio is generated with **Microsoft Edge TTS**
+  (`hi-IN-SwaraNeural`, via the `edge-tts` package) and cached as an `.mp3` per
+  case; English uses the offline Windows SAPI WAV path. Audio is generated once
+  and cached, so playback after that is fully offline. If no audio can be
+  produced, the patient dashboard falls back to the browser's Web Speech API.
   - **Translations note**: the Hindi template copy was authored by a non-native
     writer and should be reviewed by a fluent Hindi speaker before any
     production use (flagged in the code too).
