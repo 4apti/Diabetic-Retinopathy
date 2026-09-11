@@ -52,6 +52,22 @@ NEXT_STEP_HI = {
     4: "जल्दी से जल्दी नेत्र विशेषज्ञ से मिलें।",
 }
 
+# Hindi month names — the date must be Devanagari so the Hindi TTS voice reads
+# it in Hindi. Latin tokens like "Sep" are read with English phonetics and
+# sound wrong to Hindi listeners.
+HINDI_MONTHS = {
+    1: "जनवरी", 2: "फ़रवरी", 3: "मार्च", 4: "अप्रैल", 5: "मई", 6: "जून",
+    7: "जुलाई", 8: "अगस्त", 9: "सितंबर", 10: "अक्टूबर", 11: "नवंबर", 12: "दिसंबर",
+}
+
+_HI_DIGITS = str.maketrans("0123456789", "०१२३४५६७८९")
+
+
+def _hi_digits(s: str) -> str:
+    """ASCII digits -> Devanagari digits so the Hindi TTS voice reads numbers
+    (dates, "12 months") in Hindi instead of English phonetics."""
+    return s.translate(_HI_DIGITS)
+
 
 def _grade_label(grade, hi: bool) -> str:
     if grade is None:
@@ -70,6 +86,8 @@ def build_summary_text(
     """Deterministic template summary (English or Hindi) from the sign-off."""
     effective = revised_grade if (decision == "Revised" and revised_grade is not None) else ai_grade
     date_str = signed_at.strftime("%d %b %Y") if signed_at else "n/a"
+    if hi and signed_at:
+        date_str = f"{signed_at.day} {HINDI_MONTHS.get(signed_at.month, '')} {signed_at.year}"
     label = _grade_label(effective, hi)
 
     if hi:
@@ -89,7 +107,7 @@ def build_summary_text(
             parts.append(f"डॉक्टर ने परिणाम स्वीकार किया: {label}।")
         parts.append(NEXT_STEP_HI.get(effective, ""))
         parts.append(f"यह परिणाम नेत्र विशेषज्ञ द्वारा {date_str} को जाँचा गया।")
-        return " ".join(p for p in parts if p)
+        return _hi_digits(" ".join(p for p in parts if p))
 
     if decision == "Rejected":
         return (
