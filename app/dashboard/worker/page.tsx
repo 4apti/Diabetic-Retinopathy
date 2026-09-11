@@ -87,10 +87,17 @@ function NewPatientForm({
     village: "",
     district: "",
     phone: "",
+    email: "",
+    password: "",
   })
   const [fieldError, setFieldError] = React.useState<string | null>(null)
   const [serverError, setServerError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
+  const [createdLogin, setCreatedLogin] = React.useState<{
+    name: string
+    email: string
+    password: string
+  } | null>(null)
 
   function set(key: keyof typeof values, value: string) {
     setValues((prev) => ({ ...prev, [key]: value }))
@@ -101,6 +108,24 @@ function NewPatientForm({
     e.preventDefault()
     if (!values.full_name.trim()) {
       setFieldError("Full name is required.")
+      return
+    }
+    const email = values.email.trim()
+    const password = values.password
+    if (email && !password) {
+      setFieldError("Enter a password for the patient account, or leave the email blank.")
+      return
+    }
+    if (password && !email) {
+      setFieldError("Enter an email for the patient account, or leave the password blank.")
+      return
+    }
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setFieldError("Enter a valid email address.")
+      return
+    }
+    if (password && password.length < 8) {
+      setFieldError("Password must be at least 8 characters.")
       return
     }
     if (!token) return
@@ -114,9 +139,21 @@ function NewPatientForm({
         village: values.village || null,
         district: values.district || null,
         phone: values.phone || null,
+        email: email || null,
+        password: password || null,
       })
       onCreated(patient)
-      setValues({ full_name: "", age: "", gender: "", village: "", district: "", phone: "" })
+      setCreatedLogin(email ? { name: patient.full_name, email, password } : null)
+      setValues({
+        full_name: "",
+        age: "",
+        gender: "",
+        village: "",
+        district: "",
+        phone: "",
+        email: "",
+        password: "",
+      })
     } catch (err) {
       setServerError(err instanceof Error ? err.message : "Could not create patient.")
     } finally {
@@ -198,6 +235,41 @@ function NewPatientForm({
             />
           </FieldContent>
         </Field>
+        <div className="rounded-lg border bg-muted/40 p-3">
+          <p className="text-sm font-medium">Patient login (optional)</p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Set an email and password so this patient can sign in to their own
+            dashboard. Leave blank if they won&apos;t use it online.
+          </p>
+          <div className="mt-3 grid gap-3">
+            <Field>
+              <FieldLabel htmlFor="new-email">Email</FieldLabel>
+              <FieldContent>
+                <Input
+                  id="new-email"
+                  type="email"
+                  autoComplete="off"
+                  placeholder="patient@example.org"
+                  value={values.email}
+                  onChange={(e) => set("email", e.target.value)}
+                />
+              </FieldContent>
+            </Field>
+            <Field>
+              <FieldLabel htmlFor="new-password">Password</FieldLabel>
+              <FieldContent>
+                <Input
+                  id="new-password"
+                  type="text"
+                  autoComplete="off"
+                  placeholder="At least 8 characters"
+                  value={values.password}
+                  onChange={(e) => set("password", e.target.value)}
+                />
+              </FieldContent>
+            </Field>
+          </div>
+        </div>
       </FieldGroup>
 
       {serverError && (
@@ -205,6 +277,28 @@ function NewPatientForm({
           <Info />
           <AlertTitle>Could not add patient</AlertTitle>
           <AlertDescription>{serverError}</AlertDescription>
+        </Alert>
+      )}
+
+      {createdLogin && (
+        <Alert>
+          <Info />
+          <AlertTitle>Patient account created</AlertTitle>
+          <AlertDescription>
+            <p className="mt-1">
+              Give these to <strong>{createdLogin.name}</strong> so they can sign
+              in on the <strong>Patient</strong> tab:
+            </p>
+            <p className="mt-2 font-mono text-xs">
+              Email: {createdLogin.email}
+              <br />
+              Password: {createdLogin.password}
+            </p>
+            <p className="mt-2 text-xs text-muted-foreground">
+              The password is shown only once — note it down before leaving this
+              page.
+            </p>
+          </AlertDescription>
         </Alert>
       )}
 

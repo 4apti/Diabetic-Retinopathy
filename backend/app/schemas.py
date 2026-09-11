@@ -40,6 +40,9 @@ class PatientCreate(BaseModel):
     village: Optional[str] = None
     district: Optional[str] = None
     phone: Optional[str] = None
+    # Optional login for the patient. Provide both or neither.
+    email: Optional[EmailStr] = None
+    password: Optional[str] = None
 
 
 class PatientOut(BaseModel):

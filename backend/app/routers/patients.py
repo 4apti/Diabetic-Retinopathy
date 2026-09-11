@@ -5,6 +5,7 @@ from ..database import get_db
 from ..deps import get_current_user, require_roles
 from ..models import ImageUpload, Patient, User
 from ..schemas import PatientCreate, PatientOut, UploadOut
+from ..security import hash_password
 
 router = APIRouter(prefix="/patients", tags=["patients"])
 
@@ -44,7 +45,39 @@ def create_patient(
     db: Session = Depends(get_db),
     user: User = Depends(require_roles("admin", "health_worker")),
 ):
-    patient = Patient(**payload.model_dump(), created_by=user.id)
+    data = payload.model_dump()
+    email = data.pop("email", None)
+    password = data.pop("password", None)
+    if (email is None) != (password is None):
+        raise HTTPException(
+            status_code=400,
+            detail="Provide both email and password, or neither",
+        )
+
+    account: User | None = None
+    if email is not None and password is not None:
+        normalized = email.lower().strip()
+        if db.query(User).filter(User.email == normalized).first():
+            raise HTTPException(status_code=400, detail="Email already registered")
+        if len(password) < 8:
+            raise HTTPException(
+                status_code=400,
+                detail="Password must be at least 8 characters",
+            )
+        account = User(
+            email=normalized,
+            full_name=payload.full_name.strip(),
+            role="patient",
+            hashed_password=hash_password(password),
+        )
+        db.add(account)
+        db.flush()
+
+    patient = Patient(
+        **data,
+        created_by=user.id,
+        own_user_id=account.id if account else None,
+    )
     db.add(patient)
     db.commit()
     db.refresh(patient)
