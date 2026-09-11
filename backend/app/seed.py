@@ -26,6 +26,24 @@ DEMO_USERS = [
         "password": "Patient123!",
     },
     {
+        "email": "mo.faizal@example.org",
+        "full_name": "Mohammed Faizal",
+        "role": "patient",
+        "password": "Faizal123!",
+    },
+    {
+        "email": "lakshmi@example.org",
+        "full_name": "Lakshmi Devi",
+        "role": "patient",
+        "password": "Lakshmi123!",
+    },
+    {
+        "email": "aapti@example.org",
+        "full_name": "Aapti Vishwakarma",
+        "role": "patient",
+        "password": "Aapti123!",
+    },
+    {
         "email": "worker@example.org",
         "full_name": "Ravi Kumar",
         "role": "health_worker",
@@ -160,10 +178,12 @@ def seed():
     db = SessionLocal()
     try:
         users = {}
+        users_by_email = {}
         for spec in DEMO_USERS:
             existing = db.query(User).filter(User.email == spec["email"]).first()
             if existing:
                 users[spec["role"]] = existing
+                users_by_email[spec["email"]] = existing
                 continue
             user = User(
                 email=spec["email"],
@@ -175,9 +195,12 @@ def seed():
             db.commit()
             db.refresh(user)
             users[spec["role"]] = user
+            users_by_email[spec["email"]] = user
 
         worker = users["health_worker"]
-        anita = db.query(Patient).filter(Patient.own_user_id == users["patient"].id).first()
+        anita = db.query(Patient).filter(
+            Patient.own_user_id == users_by_email["patient@example.org"].id
+        ).first()
         if anita is None:
             anita = Patient(
                 full_name="Anita Sharma",
@@ -199,6 +222,7 @@ def seed():
                 "village": "Kalluvathukkal",
                 "district": "Kollam",
                 "phone": "+91 90000 00002",
+                "login_email": "mo.faizal@example.org",
             },
             {
                 "full_name": "Lakshmi Devi",
@@ -207,12 +231,33 @@ def seed():
                 "village": "Baramati",
                 "district": "Pune",
                 "phone": "+91 90000 00003",
+                "login_email": "lakshmi@example.org",
+            },
+            {
+                "full_name": "Aapti Vishwakarma",
+                "age": 39,
+                "gender": "Female",
+                "village": "Jaynagar",
+                "district": "Madhubani",
+                "phone": "+91 90000 00004",
+                "login_email": "aapti@example.org",
             },
         ]
         for spec in demo_patients:
             existing = db.query(Patient).filter(Patient.phone == spec["phone"]).first()
-            if not existing:
-                db.add(Patient(**spec, created_by=worker.id))
+            login_email = spec.pop("login_email")
+            if existing:
+                if existing.own_user_id is None and login_email in users_by_email:
+                    existing.own_user_id = users_by_email[login_email].id
+            else:
+                owner = users_by_email.get(login_email)
+                db.add(
+                    Patient(
+                        **spec,
+                        created_by=worker.id,
+                        own_user_id=owner.id if owner else None,
+                    )
+                )
 
         db.commit()
         _seed_demo_scans(db, worker, anita)

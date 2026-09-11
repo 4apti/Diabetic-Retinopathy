@@ -34,10 +34,17 @@ npm start            # http://localhost:3000  (API at :8000)
 | Role | Email | Password |
 |---|---|---|
 | Admin | `admin@netrascan.in` | `Admin123!` |
-| Patient | `patient@example.org` | `Patient123!` |
+| Patient (Anita Sharma) | `patient@example.org` | `Patient123!` |
+| Patient (Mohammed Faizal) | `mo.faizal@example.org` | `Faizal123!` |
+| Patient (Lakshmi Devi) | `lakshmi@example.org` | `Lakshmi123!` |
+| Patient (Aapti Vishwakarma) | `aapti@example.org` | `Aapti123!` |
 | Health worker | `worker@example.org` | `Worker123!` |
 | Doctor | `doctor@example.org` | `Doctor123!` |
 | Ophthalmologist | `ophthalmologist@netrascan.in` | `Doctor123!` |
+
+> Each patient account is tied to exactly one `patients` row (`own_user_id`); the
+> patient dashboard and report/status/summary endpoints resolve records through
+> that link, so every patient sees **only their own scans**.
 
 > Auth note: Phase 1's prompt specified phone + mocked-OTP login. NetraScan v2
 > ships email + password with bcrypt hashing and an in-memory login rate limiter

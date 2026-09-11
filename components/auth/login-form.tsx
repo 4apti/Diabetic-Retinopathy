@@ -191,9 +191,13 @@ export function LoginForm({ mode }: LoginFormProps) {
         <AlertDescription>
           Credentials are checked against the NetraScan API. Demo accounts:
           <br />
-          patient@example.org · worker@example.org · doctor@example.org ·
-          ophthalmologist@netrascan.in · admin@netrascan.in (passwords end in
-          &ldquo;123!&rdquo;).
+          Patients: patient@example.org (Anita) · mo.faizal@example.org ·
+          lakshmi@example.org · aapti@example.org
+          <br />
+          worker@example.org · doctor@example.org ·
+          ophthalmologist@netrascan.in · admin@netrascan.in
+          <br />
+          (passwords end in &ldquo;123!&rdquo;).
         </AlertDescription>
       </Alert>
 
