@@ -68,7 +68,7 @@ class DRDetector:
         marker = Path(weights_path).with_suffix(".pt.meta.json") if weights_path else None
         if marker is not None and marker.exists():
             try:
-                meta = json.loads(marker.read_text(encoding="utf-8"))
+                meta = json.loads(marker.read_text(encoding="utf-8-sig"))
             except (OSError, ValueError):
                 meta = {}
             if meta:
