@@ -310,6 +310,133 @@ function NewPatientForm({
   )
 }
 
+function PatientLoginPanel({
+  patient,
+  onLoginAdded,
+}: {
+  patient: PatientOut
+  onLoginAdded: (patient: PatientOut) => void
+}) {
+  const { token } = useSession()
+  const [open, setOpen] = React.useState(false)
+  const [email, setEmail] = React.useState("")
+  const [password, setPassword] = React.useState("")
+  const [error, setError] = React.useState<string | null>(null)
+  const [created, setCreated] = React.useState<{ email: string; password: string } | null>(null)
+  const [busy, setBusy] = React.useState(false)
+
+  if (patient.has_login) return null
+
+  async function save(e: React.FormEvent) {
+    e.preventDefault()
+    const em = email.trim()
+    if (!em) return setError("Email is required.")
+    if (!password) return setError("Password is required.")
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return setError("Enter a valid email address.")
+    if (password.length < 8) return setError("Password must be at least 8 characters.")
+    if (!token) return
+    setBusy(true)
+    setError(null)
+    setCreated(null)
+    try {
+      const updated = await patientsApi.addLogin(token, patient.id, em, password)
+      onLoginAdded(updated)
+      setCreated({ email: em, password })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not create login.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="rounded-lg border bg-muted/40 p-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-medium">Patient login</p>
+        {!open && (
+          <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)}>
+            Enable login
+          </Button>
+        )}
+      </div>
+      <p className="mt-0.5 text-xs text-muted-foreground">
+        {open
+          ? "Set an email and password so this patient can sign in to their own dashboard."
+          : "No login set — this patient can&apos;t sign in yet."}
+      </p>
+
+      {open && !created && (
+        <form onSubmit={save} className="mt-3 grid gap-3">
+          <Field>
+            <FieldLabel htmlFor="existing-email">Email</FieldLabel>
+            <FieldContent>
+              <Input
+                id="existing-email"
+                type="email"
+                autoComplete="off"
+                placeholder="patient@example.org"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </FieldContent>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="existing-password">Password</FieldLabel>
+            <FieldContent>
+              <Input
+                id="existing-password"
+                type="text"
+                autoComplete="off"
+                placeholder="At least 8 characters"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </FieldContent>
+          </Field>
+          {error && (
+            <p className="text-sm text-destructive" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="flex items-center gap-2">
+            <Button type="submit" size="sm" disabled={busy}>
+              {busy && <Spinner size="sm" />}
+              Save login
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setOpen(false)
+                setError(null)
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </form>
+      )}
+
+      {created && (
+        <div className="mt-3 rounded-md border bg-background p-3">
+          <p className="text-sm font-medium">Login created — share these</p>
+          <p className="mt-2 font-mono text-xs">
+            Email: {created.email}
+            <br />
+            Password: {created.password}
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Shown once — note it down.{` `}
+            They sign in under the <strong>Patient</strong> tab at
+            &nbsp;netrascan/login.
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function ScanWorkflow({ patient }: { patient: PatientOut }) {
   const { token } = useSession()
   const [file, setFile] = React.useState<File | null>(null)
@@ -507,6 +634,11 @@ function WorkerDashboard() {
     setSelected(patient)
   }
 
+  function handleLoginAdded(patient: PatientOut) {
+    setPatients((prev) => (prev ?? []).map((p) => (p.id === patient.id ? patient : p)))
+    setSelected(patient)
+  }
+
   return (
     <DashboardShell
       title="Patients & screenings"
@@ -586,6 +718,11 @@ function WorkerDashboard() {
                           {patient.age && (
                             <span className="opacity-80"> · {patient.age} yrs</span>
                           )}
+                          {patient.has_login && (
+                            <span className="ml-1 inline-block rounded bg-primary/10 px-1 text-[10px] leading-[18px] text-primary">
+                              LOGIN
+                            </span>
+                          )}
                         </span>
                         <span className={cn("text-xs", isSelected ? "opacity-80" : "text-muted-foreground")}>
                           {patient.village || patient.district || "—"}
@@ -594,7 +731,12 @@ function WorkerDashboard() {
                     )
                   })}
                 </div>
-                {selected && <ScanWorkflow key={selected.id} patient={selected} />}
+                {selected && (
+                  <>
+                    <PatientLoginPanel patient={selected} onLoginAdded={handleLoginAdded} />
+                    <ScanWorkflow key={selected.id} patient={selected} />
+                  </>
+                )}
               </div>
             )}
           </CardContent>

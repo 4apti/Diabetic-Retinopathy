@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, computed_field
 
 
 # ---------- Auth ----------
@@ -45,6 +45,11 @@ class PatientCreate(BaseModel):
     password: Optional[str] = None
 
 
+class PatientLogin(BaseModel):
+    email: EmailStr
+    password: str
+
+
 class PatientOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -56,6 +61,12 @@ class PatientOut(BaseModel):
     district: Optional[str] = None
     phone: Optional[str] = None
     created_at: datetime
+    own_user_id: Optional[int] = None
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def has_login(self) -> bool:
+        return self.own_user_id is not None
 
 
 # ---------- Uploads ----------

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..deps import get_current_user, require_roles
 from ..models import ImageUpload, Patient, User
-from ..schemas import PatientCreate, PatientOut, UploadOut
+from ..schemas import PatientCreate, PatientLogin, PatientOut, UploadOut
 from ..security import hash_password
 
 router = APIRouter(prefix="/patients", tags=["patients"])
@@ -117,3 +117,41 @@ def patient_scans(
         .order_by(ImageUpload.uploaded_at.desc())
         .all()
     )
+
+
+@router.post("/{patient_id}/login", response_model=PatientOut)
+def add_patient_login(
+    patient_id: int,
+    payload: PatientLogin,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles("admin", "health_worker")),
+):
+    patient = db.get(Patient, patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    if user.role == "health_worker" and patient.created_by != user.id:
+        raise HTTPException(status_code=403, detail="Not allowed to edit this patient")
+    if patient.own_user_id is not None:
+        raise HTTPException(status_code=400, detail="Patient already has a login")
+
+    email = payload.email.lower().strip()
+    if db.query(User).filter(User.email == email).first():
+        raise HTTPException(status_code=400, detail="Email already registered")
+    if len(payload.password) < 8:
+        raise HTTPException(
+            status_code=400,
+            detail="Password must be at least 8 characters",
+        )
+
+    account = User(
+        email=email,
+        full_name=patient.full_name,
+        role="patient",
+        hashed_password=hash_password(payload.password),
+    )
+    db.add(account)
+    db.flush()
+    patient.own_user_id = account.id
+    db.commit()
+    db.refresh(patient)
+    return patient

@@ -98,6 +98,7 @@ export interface PatientOut {
   district: string | null
   phone: string | null
   created_at: string
+  has_login: boolean
 }
 
 export interface RoleStats {
@@ -246,6 +247,11 @@ export const patientsApi = {
     apiFetch<PatientOut>("/patients", {
       method: "POST",
       body: JSON.stringify(patient),
+    }, token),
+  addLogin: (token: string, patientId: number, email: string, password: string) =>
+    apiFetch<PatientOut>(`/patients/${patientId}/login`, {
+      method: "POST",
+      body: JSON.stringify({ email, password }),
     }, token),
   scans: (token: string, patientId: number) =>
     apiFetch<UploadOut[]>(`/patients/${patientId}/scans`, {}, token),
