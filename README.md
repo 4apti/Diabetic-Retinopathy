@@ -240,6 +240,44 @@ the frontend `app/doctor/**` route tree,
 `components/reports/report-panel.tsx`, Phase 4 sections in the admin overview
 and dashboards.
 
+### Phase 4 Part A fixes — Universal report & in-tab viewer
+
+A follow-up fix cycle that changed **only** report generation and the image
+viewer (auth, upload, quality gate, engines, consistency check and the
+claim/contact/notes workflow are untouched):
+
+- **In-tab zoom/pan viewer** — `components/reports/image-viewer.tsx` is a shared
+  `react-zoom-pan-pinch` lightbox used everywhere a scan is shown (patient
+  dashboard, doctor case detail, review-queue rows, ASHA worker preview, and
+  inside the report panel). Wheel/pinch zoom, drag pan, Esc/backdrop close, and
+  a **Fundus / Heatmap** toggle when a Grad-CAM exists — no more static `<img>`
+  or `target="_blank"` jumps.
+- **Region description reflects the real heatmap** — `ml/gradcam.py` now
+  computes the description from the actual Grad-CAM: threshold at the top 20% of
+  activations, `connectedComponentsWithStats` cluster detection, cluster-centre
+  classification against the optic disc (best-effort bright-circular detection;
+  fallback when absent) and type/key note of whether each hotspot overlaps
+  detected lesion boxes. The old hand-written-ish `region_notes_from_cam` shim
+  is retained only for backwards compatibility.
+- **Full lesion breakdown + grade justification** — every report names all four
+  lesion types including explicit zeros, states which lesions actually drive the
+  ICDR grade (and which grade-3/4 features the engine *cannot* see), and adds a
+  separate, honestly-worded **possible macular edema** flag when heavy hard
+  exudation coincides with macula attention (or exudate boxes in the macular
+  zone).
+- **Universal report format** — patient and doctor views share the same report
+  layout (Header snapshot → Findings → Observations → Recommendation →
+  standardized closing disclaimer). Demographics are frozen at generation time
+  into new `screening_reports` columns (`patient_id/name/age/gender`,
+  `referring_phc`, `submitting_worker`, `scan_date`, `eye_laterality`), so a
+  later patient-profile edit never rewrites a printed report. `ReportOut` now
+  carries the header, observations, recommendation and disclaimer, and the
+  frontend renders the same sectioned component for both variants (the patient
+  layout hides only the structured-review `<details>` block).
+- Detection boxes are persisted (normalized 0–1) on new analyses so the overlap
+  and macula signals are computed from real detections; a one-shot
+  `app/refresh_reports.py` backfills boxes and regenerates every existing report.
+
 ## Provenance & clinical disclaimer
 
 Every result view shows exactly what was run (model, training source, val QWK,

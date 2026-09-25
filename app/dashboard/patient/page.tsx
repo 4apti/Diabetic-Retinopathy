@@ -21,7 +21,6 @@ import {
   type PatientStatus,
   type PatientSummary,
   type UploadOut,
-  fetchScanBlobUrl,
   fetchSummaryAudioUrl,
   patientsApi,
   telemedApi,
@@ -29,6 +28,7 @@ import {
 import { useSession } from "@/lib/session"
 import { findingBadgeTone } from "@/lib/consistency"
 import { ScreeningReportPanel } from "@/components/reports/report-panel"
+import { ScanImageViewer } from "@/components/reports/image-viewer"
 import {
   CheckCircle2,
   Hourglass,
@@ -265,22 +265,7 @@ function ModelProvenanceNote({ raw }: { raw: string }) {
 }
 
 function FindingPanel({ finding, token }: { finding: FindingOut; token: string }) {
-  const [preview, setPreview] = React.useState<string | null>(null)
   const [status, setStatus] = React.useState<PatientStatus | null>(null)
-
-  React.useEffect(() => {
-    let active = true
-    fetchScanBlobUrl(finding.image_id, token)
-      .then((url) => {
-        if (active) setPreview(url)
-      })
-      .catch(() => {
-        if (active) setPreview(null)
-      })
-    return () => {
-      active = false
-    }
-  }, [finding.image_id, token])
 
   // Phase 4 — patient status is server-derived; poll until reviewed so the
   // page updates without a manual refresh when the doctor signs off.
@@ -417,14 +402,7 @@ function FindingPanel({ finding, token }: { finding: FindingOut; token: string }
           </p>
         )}
 
-        {preview && (
-          // eslint-disable-next-line @next/next/no-img-element -- blob URL from authenticated fetch
-          <img
-            src={preview}
-            alt="Your uploaded retina scan"
-            className="max-h-64 w-full rounded-lg border object-cover"
-          />
-        )}
+        <ScanImageViewer imageId={finding.image_id} token={token} className="mt-4" />
       </CardContent>
     </Card>
   )

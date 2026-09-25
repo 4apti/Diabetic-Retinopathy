@@ -6,6 +6,7 @@ import { CheckCircle2, ClipboardCheck, Info, Radio } from "lucide-react"
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { RequireRole } from "@/components/dashboard/route-guard"
 import { ScreeningReportPanel } from "@/components/reports/report-panel"
+import { ScanImageViewer } from "@/components/reports/image-viewer"
 import {
   Card,
   CardContent,
@@ -23,7 +24,6 @@ import {
   type RoleStats,
   type SignOffInput,
   dashboardApi,
-  fetchScanBlobUrl,
   telemedApi,
 } from "@/lib/api"
 import { useSession } from "@/lib/session"
@@ -215,23 +215,7 @@ function ReviewCase({
   onSigned: (imageId: string) => void
 }) {
   const [open, setOpen] = React.useState(false)
-  const [preview, setPreview] = React.useState<string | null>(null)
   const seenRef = React.useRef(false)
-
-  React.useEffect(() => {
-    if (!item.signed_off || !open) return
-    // Only load the preview once when the case is actually opened.
-    let active = true
-    fetchScanBlobUrl(item.image_id, token)
-      .then((url) => {
-        if (active) setPreview(url)
-      })
-      .catch(() => setPreview(null))
-    return () => {
-      active = false
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.image_id, token, open])
 
   React.useEffect(() => {
     if (open && !seenRef.current && !item.signed_off) {
@@ -321,14 +305,11 @@ function ReviewCase({
             </div>
           </div>
 
-          {preview && (
-            // eslint-disable-next-line @next/next/no-img-element -- authenticated blob URL
-            <img
-              src={preview}
-              alt={`Retina scan for ${item.patient_name}`}
-              className="max-h-56 w-full rounded-lg border object-cover"
-            />
-          )}
+          <ScanImageViewer
+            imageId={item.image_id}
+            token={token}
+            label={`${item.patient_name} — retina scan`}
+          />
 
           <ScreeningReportPanel imageId={item.image_id} token={token} variant="clinical" />
 

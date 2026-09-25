@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/card"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
+import { ScanImageViewer } from "@/components/reports/image-viewer"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Field, FieldContent, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
@@ -695,6 +696,12 @@ function ScanWorkflow({ patient }: { patient: PatientOut }) {
               </span>
             )}
           </div>
+
+          <ScanImageViewer
+            imageId={upload.image_id}
+            token={token ?? ""}
+            label="Captured retina scan"
+          />
 
           {busy === "analyzing" && (
             <div className="flex items-center gap-2 text-sm text-muted-foreground">

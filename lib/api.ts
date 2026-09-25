@@ -142,14 +142,50 @@ export interface LesionSummaryItem {
   avg_confidence: number | null
 }
 
+export interface LesionBreakdownItem {
+  type: string
+  count: number
+}
+
+export interface ReportHeader {
+  patient_id: number | null
+  patient_name: string | null
+  patient_age: number | null
+  patient_gender: string | null
+  referring_phc: string | null
+  submitting_worker: string | null
+  scan_date: string | null
+  eye_laterality: string | null
+}
+
+export interface RegionAnalysis {
+  cluster_count: number | null
+  used_optic_disc: boolean
+  disc: unknown
+  clusters: unknown
+  description: string | null
+  macula_attention: boolean
+  exudates_near_macula: number
+  spread_evenly: boolean
+}
+
 export interface StructuredFindings {
   icdr_grade: number | null
   icdr_grade_label: string
+  lesion_breakdown?: LesionBreakdownItem[]
   lesion_summary: LesionSummaryItem[]
   total_lesion_count: number
   consistency_status: string
   flagged_reason: string | null
   model_version: string | null
+  grade_basis?: string
+  possible_macular_edema?: boolean
+  macular_edema_note?: string | null
+  region_analysis?: RegionAnalysis | null
+  region_notes?: string | null
+  observations?: string[]
+  recommendation?: string | null
+  disclaimer?: string | null
 }
 
 export interface ScreeningReport {
@@ -161,6 +197,10 @@ export interface ScreeningReport {
   generation_method: "template" | "llm"
   model_version: string | null
   generated_at: string | null
+  header?: ReportHeader | null
+  observations?: string[]
+  recommendation?: string | null
+  disclaimer?: string | null
 }
 
 export interface DoctorQueueItem {

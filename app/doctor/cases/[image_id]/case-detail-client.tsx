@@ -16,6 +16,7 @@ import {
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { RequireRole } from "@/components/dashboard/route-guard"
 import { ScreeningReportPanel } from "@/components/reports/report-panel"
+import { ScanImageViewer } from "@/components/reports/image-viewer"
 import {
   Card,
   CardContent,
@@ -32,7 +33,6 @@ import {
   type CaseNote,
   type CaseStatus,
   doctorApi,
-  fetchScanBlobUrl,
 } from "@/lib/api"
 import { useSession } from "@/lib/session"
 import { cn } from "cn"
@@ -303,7 +303,6 @@ function CaseDetailView() {
   const imageId = params?.image_id ?? ""
   const { token } = useSession()
   const [detail, setDetail] = React.useState<CaseDetail | null>(null)
-  const [preview, setPreview] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [retry, setRetry] = React.useState(0)
 
@@ -325,21 +324,6 @@ function CaseDetailView() {
       active = false
     }
   }, [token, imageId, retry])
-
-  React.useEffect(() => {
-    if (!detail || !token) return
-    let active = true
-    fetchScanBlobUrl(detail.image_id, token)
-      .then((url) => {
-        if (active) setPreview(url)
-      })
-      .catch(() => {
-        if (active) setPreview(null)
-      })
-    return () => {
-      active = false
-    }
-  }, [detail, token])
 
   if (error && !detail) {
     return (
@@ -415,14 +399,11 @@ function CaseDetailView() {
             </div>
 
             <div className="flex flex-col gap-4 lg:col-span-2">
-              {preview && (
-                // eslint-disable-next-line @next/next/no-img-element -- authenticated blob URL
-                <img
-                  src={preview}
-                  alt={`Retina scan for ${detail.patient_name}`}
-                  className="max-h-64 w-full rounded-lg border object-cover"
-                />
-              )}
+              <ScanImageViewer
+                imageId={detail.image_id}
+                token={token ?? ""}
+                label={`${detail.patient_name} — retina scan`}
+              />
               <ScreeningReportPanel
                 imageId={detail.image_id}
                 token={token ?? ""}

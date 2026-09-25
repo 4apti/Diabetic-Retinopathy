@@ -56,8 +56,27 @@ def analyze_image(
             image_bytes = Path(upload.file_path).read_bytes()
             det_result = registry.detector.predict(image_bytes)
             lesion_counts = det_result.lesion_counts
+            # Persist detection boxes (normalized 0..1 to the original image)
+            # so the report can compute real lesion-to-macula / hotspot overlap
+            # at generation time (Phase-4-A fixes).
+            from collections import defaultdict
+
+            detector = registry.detector
+            with Image.open(Path(upload.file_path)) as src:
+                iw, ih = src.size
+            boxes_by_type: dict[str, list[list[float]]] = defaultdict(list)
+            for det in det_result.detections:
+                x1, y1, x2, y2 = det.box
+                boxes_by_type[det.label].append(
+                    [round(x1 / iw, 4), round(y1 / ih, 4), round(x2 / iw, 4), round(y2 / ih, 4)]
+                )
             lesion_list = [
-                {"type": label, "count": count} for label, count in sorted(lesion_counts.items())
+                {
+                    "type": label,
+                    "count": len(boxes_by_type[label]),
+                    "boxes": boxes_by_type[label],
+                }
+                for label in sorted(boxes_by_type)
             ]
 
         # Dual-engine consistency

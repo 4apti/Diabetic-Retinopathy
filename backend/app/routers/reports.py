@@ -78,6 +78,21 @@ def get_report(
         generation_method=report.generation_method,
         model_version=report.model_version,
         generated_at=report.generated_at,
+        # Universal report header snapshot (demographics at scan time) + the
+        # sectioned plain-language blocks for rendering.
+        header={
+            "patient_id": report.patient_id,
+            "patient_name": report.patient_name,
+            "patient_age": report.patient_age,
+            "patient_gender": report.patient_gender,
+            "referring_phc": report.referring_phc,
+            "submitting_worker": report.submitting_worker,
+            "scan_date": report.scan_date,
+            "eye_laterality": report.eye_laterality,
+        },
+        observations=structured.get("observations", []),
+        recommendation=structured.get("recommendation"),
+        disclaimer=structured.get("disclaimer"),
     )
 
 

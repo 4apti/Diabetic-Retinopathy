@@ -110,11 +110,21 @@ class ScreeningReport(Base):
     )
     report_text = Column(Text, nullable=False)
     structured_findings = Column(Text, default="{}")  # JSON — clinician-facing object
-    region_notes = Column(Text, nullable=True)  # image-relative quadrant activation
+    region_notes = Column(Text, nullable=True)  # computed heatmap region description
     gradcam_path = Column(String, nullable=True)  # null when heatmap computation failed
     generation_method = Column(String, default="template")  # template | llm
     model_version = Column(String, nullable=True)
     generated_at = Column(DateTime, default=datetime.utcnow)
+    # Universal report header — demographics snapshot taken at generation time so
+    # the report never silently changes if the patient profile is edited later.
+    patient_id = Column(Integer, nullable=True)
+    patient_name = Column(String, nullable=True)
+    patient_age = Column(Integer, nullable=True)
+    patient_gender = Column(String, nullable=True)
+    referring_phc = Column(String, nullable=True)  # village, district snapshot
+    submitting_worker = Column(String, nullable=True)  # ASHA worker full name
+    scan_date = Column(DateTime, nullable=True)  # date of scan (analyzed time)
+    eye_laterality = Column(String, nullable=True)  # OD | OS — currently not captured
 
     finding = relationship("AIFinding", back_populates="report")
 

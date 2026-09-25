@@ -130,6 +130,12 @@ class ReportOut(BaseModel):
     generation_method: str = "template"
     model_version: Optional[str] = None
     generated_at: Optional[datetime] = None
+    # Universal report format (Phase-4-A fixes) — demographics snapshot frozen
+    # at generation time plus the sectioned Findings/Observations/Recommendation.
+    header: Optional[dict[str, Any]] = None
+    observations: list[str] = []
+    recommendation: Optional[str] = None
+    disclaimer: Optional[str] = None
 
 
 # ---------- Phase 4 — Telemedicine ----------

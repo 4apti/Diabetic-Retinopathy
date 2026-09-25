@@ -30,6 +30,14 @@ async def lifespan(app: FastAPI):
         for stmt in (
             "ALTER TABLE image_uploads ADD COLUMN retake_count INTEGER DEFAULT 0",
             "ALTER TABLE ai_findings ADD COLUMN model_version VARCHAR DEFAULT NULL",
+            "ALTER TABLE screening_reports ADD COLUMN patient_id INTEGER",
+            "ALTER TABLE screening_reports ADD COLUMN patient_name VARCHAR",
+            "ALTER TABLE screening_reports ADD COLUMN patient_age INTEGER",
+            "ALTER TABLE screening_reports ADD COLUMN patient_gender VARCHAR",
+            "ALTER TABLE screening_reports ADD COLUMN referring_phc VARCHAR",
+            "ALTER TABLE screening_reports ADD COLUMN submitting_worker VARCHAR",
+            "ALTER TABLE screening_reports ADD COLUMN scan_date DATETIME",
+            "ALTER TABLE screening_reports ADD COLUMN eye_laterality VARCHAR",
         ):
             try:
                 conn.execute(text(stmt))
