@@ -29,6 +29,7 @@ from .gradcam import (
     report_dir,
 )
 from .registry import registry
+from ..cases import ensure_case_tracking
 from ..sync import enqueue_sync
 
 logger = logging.getLogger("netrascan.reports")
@@ -351,4 +352,11 @@ def ensure_report(
         enqueue_sync(db, finding.image_id)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Could not enqueue %s for sync: %s", finding.image_id, exc)
+
+    # Phase 4 Part A — the report existing means the case is trackable. Create
+    # (or refresh) the case_tracking row with its severity band.
+    try:
+        ensure_case_tracking(db, finding)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Could not create case tracking for %s: %s", finding.image_id, exc)
     return report

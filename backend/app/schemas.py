@@ -199,4 +199,94 @@ class SummaryOut(BaseModel):
     content_version: str | None = None
 
 
+# ---------- Phase 4 Part A — Case tracking (doctor portal / ASHA bridge) ----------
+class CaseListItem(BaseModel):
+    image_id: str
+    patient_id: int
+    patient_name: str
+    patient_age: Optional[int] = None
+    patient_gender: Optional[str] = None
+    village: Optional[str] = None
+    district: Optional[str] = None
+    phc: Optional[str] = None
+    icdr_grade: Optional[int] = None
+    icdr_confidence: Optional[float] = None
+    consistency_status: str = "pending"
+    severity_band: str = "Low"  # Low | Medium | High
+    status: str = "New"  # New | Claimed | Contacted | Reviewed
+    flagged: bool = False
+    assigned_doctor_id: Optional[int] = None
+    assigned_doctor_name: Optional[str] = None
+    worker_id: Optional[int] = None
+    worker_name: Optional[str] = None
+    has_report: bool = False
+    signed_off: bool = False
+    analyzed_at: Optional[datetime] = None
+    uploaded_at: Optional[datetime] = None
+    claimed_at: Optional[datetime] = None
+    contacted_at: Optional[datetime] = None
+    reviewed_at: Optional[datetime] = None
+    created_at: Optional[datetime] = None
+
+
+class CaseSummaryOut(BaseModel):
+    total: int = 0
+    high: int = 0
+    medium: int = 0
+    low: int = 0
+    flagged_pending: int = 0
+    awaiting_review: int = 0
+    claimed_by_me: int = 0
+    today_reported: int = 0
+    today_reviewed: int = 0
+
+
+class CaseNoteOut(BaseModel):
+    id: int
+    image_id: str
+    author_id: int
+    author_name: str
+    body: str
+    created_at: datetime
+
+
+class CaseNoteIn(BaseModel):
+    body: str
+
+
+class CaseStatusIn(BaseModel):
+    status: str  # Claimed | Contacted | Reviewed
+
+
+class CaseDetailOut(CaseListItem):
+    phone: Optional[str] = None
+    lesion_count: Optional[int] = None
+    lesion_list: Any = None
+    sync_status: str = "queued"
+    report_generation_method: Optional[str] = None
+    sign_off: Optional[dict[str, Any]] = None
+    notes: list[CaseNoteOut] = []
+
+
+class NlSearchIn(BaseModel):
+    query: str
+
+
+class NlSearchOut(BaseModel):
+    query: str
+    matched: bool = False
+    filter: Optional[dict[str, Any]] = None
+    message: str = ""
+    items: list[CaseListItem] = []
+
+
+class PatientCaseOut(BaseModel):
+    image_id: Optional[str] = None
+    status: str = "None"
+    severity_band: Optional[str] = None
+    flagged: bool = False
+    has_case: bool = False
+    updated_at: Optional[datetime] = None
+
+
 TokenResponse.model_rebuild()

@@ -196,9 +196,47 @@ sign-off → patient summary in their language, with voice.**
   worker → upload → analyze → the case appears (badge + toast) for
   ophthalmologist → sign off → patient sees *Reviewed* + summary + voice.
 
-New tables: `sync_queue`, `sign_offs`, `patient_summaries`; new modules:
+### Phase 4 Part A — Dedicated doctor portal & ASHA care bridge
+
+The `/dashboard/doctor` review loop stays, but the **primary doctor landing** is
+now the purpose-built **`/doctor` portal** (doctors and ophthalmologists land
+here after login):
+
+- **Case queue** (`GET /api/doctor/cases`): every report automatically gets a
+  `case_tracking` row (`ensure_case_tracking`, backfilled at startup) with a
+  **severity band** derived from the AI grade + consistency flag
+  (grade 0–1 Low, 2 Medium, 3–4 High; "Flagged for Review" ⇒ High). The queue
+  sorts unflagged-non-urgent last and **flagged-unhandled cases first**, then
+  by band, then by status progress. Filters: `severity`, `status`, `phc`,
+  `consistency`, `from`, `to`. Summary endpoint drives the dashboard cards
+  (Awaiting review / Flagged pending / Claimed by me / Reported today).
+- **Natural-language search** (`POST /api/doctor/cases/search`): a constrained
+  NL query over the same filter schema (`severity_band`, `status`, `consistency`,
+  `phc`, `from_date`, `to_date`). When `ANTHROPIC_API_KEY` is present an
+  Anthropic model parses the query; otherwise a deterministic keyword parser
+  produces the identical validated schema. Unknown queries return
+  `matched: false` with a friendly message (never a silent empty table).
+- **Closed-loop follow-up**: a case runs **New → Claimed → Contacted → Reviewed**
+  with per-step timestamps (`assigned_doctor_id`, `claimed_at`, `contacted_at`,
+  `reviewed_at`). Any case detail page lets the doctor claim it, advance the
+  stage, and post **append-only `case_notes`** (never editable). Contact info
+  stays masked until the doctor explicitly reveals it (with WhatsApp/Call
+  links). Progress bar + timeline show **live** status back to the ASHA worker.
+- **ASHA worker bridge**: the worker dashboard now shows a **live case status**
+  column per patient (band + stage, auto-refreshing) and a read-only window into
+  the doctor's notes thread — plus the ability to post notes back to the doctor
+  (e.g. "patient arrived", "transport arranged"), closing the loop without a
+  phone call.
+- **Existing endpoints are unchanged and additive**: every role still has the
+  strict `require_roles` guards, and the old `/dashboard/doctor` sign-off flow
+  remains intact (linked from the new case page for direct report sign-off).
+
+New tables: `sync_queue`, `sign_offs`, `patient_summaries`, plus
+`case_tracking`/`case_notes` (Phase 4 Part A); new modules:
 `app/sync.py` (worker + bandwidth probe), `app/ml/summaries.py` (templates +
 SAPI voice), `app/routers/telemedicine.py` (queue/sign-off/summaries APIs),
+`app/cases.py` + `app/nl_search.py` + `app/routers/cases.py` (Phase 4 Part A),
+the frontend `app/doctor/**` route tree,
 `components/reports/report-panel.tsx`, Phase 4 sections in the admin overview
 and dashboards.
 

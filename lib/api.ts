@@ -231,6 +231,94 @@ export interface PatientSummary {
   content_version?: string
 }
 
+export type CaseStatus = "New" | "Claimed" | "Contacted" | "Reviewed"
+export type SeverityBand = "Low" | "Medium" | "High"
+
+export interface CaseListItem {
+  image_id: string
+  patient_id: number
+  patient_name: string
+  patient_age: number | null
+  patient_gender: string | null
+  village: string | null
+  district: string | null
+  phc: string | null
+  icdr_grade: number | null
+  icdr_confidence: number | null
+  consistency_status: string
+  severity_band: SeverityBand
+  status: CaseStatus
+  flagged: boolean
+  assigned_doctor_id: number | null
+  assigned_doctor_name: string | null
+  worker_id: number | null
+  worker_name: string | null
+  has_report: boolean
+  signed_off: boolean
+  analyzed_at: string | null
+  uploaded_at: string | null
+  claimed_at: string | null
+  contacted_at: string | null
+  reviewed_at: string | null
+  created_at: string | null
+}
+
+export interface CaseSummary {
+  total: number
+  high: number
+  medium: number
+  low: number
+  flagged_pending: number
+  awaiting_review: number
+  claimed_by_me: number
+  today_reported: number
+  today_reviewed: number
+}
+
+export interface CaseNote {
+  id: number
+  image_id: string
+  author_id: number
+  author_name: string
+  body: string
+  created_at: string
+}
+
+export interface CaseSignOff {
+  decision: string
+  doctor_notes: string | null
+  revised_grade: number | null
+  signed_at: string
+  ophthalmologist_id: number
+}
+
+export interface CaseDetail extends CaseListItem {
+  phone: string | null
+  lesion_count: number | null
+  lesion_list: unknown
+  sync_status: string
+  report_generation_method: string | null
+  sign_off: CaseSignOff | null
+  notes: CaseNote[]
+}
+
+export interface NlSearchResult {
+  query: string
+  matched: boolean
+  filter: Record<string, string> | null
+  message: string
+  items: CaseListItem[]
+}
+
+export interface PatientCaseInfo {
+  image_id: string | null
+  status: string
+  severity_band: SeverityBand | null
+  flagged: boolean
+  has_case: boolean
+  updated_at: string | null
+}
+
 export const authApi = {
   login: (email: string, password: string) =>
     apiFetch<TokenResponse>("/auth/login", {
@@ -255,6 +343,8 @@ export const patientsApi = {
     }, token),
   scans: (token: string, patientId: number) =>
     apiFetch<UploadOut[]>(`/patients/${patientId}/scans`, {}, token),
+  caseInfo: (token: string, patientId: number) =>
+    apiFetch<PatientCaseInfo>(`/patients/${patientId}/case`, {}, token),
 }
 
 export const uploadsApi = {
@@ -311,6 +401,47 @@ export const telemedApi = {
     apiFetch<PatientStatus>(`/reports/${imageId}/status`, {}, token),
   summaries: (token: string, imageId: string) =>
     apiFetch<PatientSummary[]>(`/summaries/${imageId}`, {}, token),
+}
+
+export const doctorApi = {
+  cases: (token: string, params?: Record<string, string>) => {
+    const qs = params ? new URLSearchParams(params).toString() : ""
+    return apiFetch<CaseListItem[]>(
+      `/doctor/cases${qs ? `?${qs}` : ""}`,
+      {},
+      token,
+    )
+  },
+  summary: (token: string) =>
+    apiFetch<CaseSummary>("/doctor/cases/summary", {}, token),
+  detail: (token: string, imageId: string) =>
+    apiFetch<CaseDetail>(`/doctor/cases/detail/${imageId}`, {}, token),
+  notes: (token: string, imageId: string) =>
+    apiFetch<CaseNote[]>(`/doctor/cases/notes/${imageId}`, {}, token),
+  addNote: (token: string, imageId: string, body: string) =>
+    apiFetch<CaseNote>(
+      `/doctor/cases/notes/${imageId}`,
+      { method: "POST", body: JSON.stringify({ body }) },
+      token,
+    ),
+  claim: (token: string, imageId: string) =>
+    apiFetch<CaseDetail>(
+      `/doctor/cases/claim/${imageId}`,
+      { method: "POST" },
+      token,
+    ),
+  setStatus: (token: string, imageId: string, status: CaseStatus) =>
+    apiFetch<CaseDetail>(
+      `/doctor/cases/status/${imageId}`,
+      { method: "POST", body: JSON.stringify({ status }) },
+      token,
+    ),
+  search: (token: string, query: string) =>
+    apiFetch<NlSearchResult>(
+      "/doctor/cases/search",
+      { method: "POST", body: JSON.stringify({ query }) },
+      token,
+    ),
 }
 
 export function summaryAudioUrl(

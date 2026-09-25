@@ -177,3 +177,50 @@ class PatientSummary(Base):
     generated_at = Column(DateTime, default=datetime.utcnow)
 
     __table_args__ = (UniqueConstraint("image_id", "language"),)
+
+
+class CaseTracking(Base):
+    """Phase 4 Part A — operational case tracking for a screened image.
+
+    One row per completed AI finding, created the moment the screening report
+    exists. severity_band is derived from the ICDR grade (0–1 Low, 2 Medium,
+    3–4 High) and forced to High when the dual-engine check flagged the image.
+    status marches New -> Claimed -> Contacted -> Reviewed.
+    """
+
+    __tablename__ = "case_tracking"
+
+    id = Column(Integer, primary_key=True, index=True)
+    image_id = Column(
+        String, ForeignKey("ai_findings.image_id"), unique=True, index=True, nullable=False
+    )
+    severity_band = Column(String, nullable=False, default="Low")  # Low | Medium | High
+    status = Column(String, nullable=False, default="New")  # New | Claimed | Contacted | Reviewed
+    assigned_doctor_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    claimed_at = Column(DateTime, nullable=True)
+    contacted_at = Column(DateTime, nullable=True)
+    reviewed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    notes = relationship("CaseNote", back_populates="case", cascade="all, delete-orphan")
+
+
+class CaseNote(Base):
+    """Phase 4 Part A — chronological collaboration thread on a tracked case.
+
+    Both the reviewing clinician and the ASHA worker who registered the patient
+    can append notes. Never edited or deleted after posting (audit trail).
+    """
+
+    __tablename__ = "case_notes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    image_id = Column(
+        String, ForeignKey("case_tracking.image_id"), index=True, nullable=False
+    )
+    author_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    author_name = Column(String, nullable=False)
+    body = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+    case = relationship("CaseTracking", back_populates="notes")

@@ -3,8 +3,14 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..deps import get_current_user, require_roles
-from ..models import ImageUpload, Patient, User
-from ..schemas import PatientCreate, PatientLogin, PatientOut, UploadOut
+from ..models import AIFinding, CaseTracking, ImageUpload, Patient, User
+from ..schemas import (
+    PatientCaseOut,
+    PatientCreate,
+    PatientLogin,
+    PatientOut,
+    UploadOut,
+)
 from ..security import hash_password
 
 router = APIRouter(prefix="/patients", tags=["patients"])
@@ -96,6 +102,69 @@ def get_patient(
     if user.role == "health_worker" and patient.created_by != user.id:
         raise HTTPException(status_code=403, detail="Not allowed to view this patient")
     return patient
+
+
+@router.get("/{patient_id}/case", response_model=PatientCaseOut)
+def patient_latest_case(
+    patient_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Live case snapshot for the ASHA worker dashboard (status + band).
+
+    A worker sees it only for patients they registered; patients are denied.
+    """
+    patient = db.get(Patient, patient_id)
+    if patient is None:
+        raise HTTPException(status_code=404, detail="Patient not found")
+    if user.role == "health_worker" and patient.created_by != user.id:
+        raise HTTPException(status_code=403, detail="Not allowed to view this patient")
+
+    upload = (
+        db.query(ImageUpload)
+        .filter(ImageUpload.patient_id == patient.id)
+        .order_by(ImageUpload.uploaded_at.desc())
+        .first()
+    )
+    if upload is None:
+        return PatientCaseOut(has_case=False, status="None")
+
+    finding = (
+        db.query(AIFinding)
+        .filter(
+            AIFinding.image_id == upload.image_id,
+            AIFinding.analysis_status == "completed",
+        )
+        .first()
+    )
+    if finding is None:
+        return PatientCaseOut(
+            image_id=upload.image_id,
+            has_case=False,
+            status="None",
+        )
+
+    case = (
+        db.query(CaseTracking)
+        .filter(CaseTracking.image_id == finding.image_id)
+        .first()
+    )
+    if case is None:
+        return PatientCaseOut(
+            image_id=finding.image_id,
+            has_case=False,
+            status="None",
+        )
+
+    updated_at = case.reviewed_at or case.contacted_at or case.claimed_at or case.created_at
+    return PatientCaseOut(
+        image_id=finding.image_id,
+        status=case.status,
+        severity_band=case.severity_band,
+        flagged=(case.severity_band == "High"),
+        has_case=True,
+        updated_at=updated_at,
+    )
 
 
 @router.get("/{patient_id}/scans", response_model=list[UploadOut])

@@ -10,6 +10,7 @@ from .ml.registry import registry
 from .routers import (
     analyze,
     auth,
+    cases,
     dashboard,
     patients,
     reports,
@@ -36,6 +37,15 @@ async def lifespan(app: FastAPI):
                 pass  # column already exists
         conn.commit()
     registry.load()
+    # Phase 4 Part A — backfill case_tracking rows for reports that already exist.
+    from .cases import backfill_case_tracking
+    from .database import SessionLocal as CaseSessionLocal
+
+    try:
+        with CaseSessionLocal() as db:
+            backfill_case_tracking(db)
+    except Exception:
+        pass  # a failure here must not prevent the API from serving
     sync_worker.start()
     yield
     sync_worker.stop()
@@ -69,6 +79,7 @@ for router in (
     dashboard.router,
     reports.router,
     telemedicine.router,
+    cases.router,
 ):
     app.include_router(router, prefix=settings.api_prefix)
 

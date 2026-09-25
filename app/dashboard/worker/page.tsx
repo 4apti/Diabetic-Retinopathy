@@ -18,15 +18,18 @@ import { Input } from "@/components/ui/input"
 import { Field, FieldContent, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field"
 import { Spinner } from "@/components/ui/spinner"
 import {
+  type CaseNote,
   type FindingOut,
+  type PatientCaseInfo,
   type PatientOut,
   type UploadOut,
+  doctorApi,
   patientsApi,
   uploadsApi,
 } from "@/lib/api"
 import { useSession } from "@/lib/session"
 import { cn } from "cn"
-import { Info, ScanLine, UploadCloud } from "lucide-react"
+import { Info, MessageSquareText, ScanLine, Send, UploadCloud } from "lucide-react"
 import { findingBadgeTone } from "@/lib/consistency"
 
 const gradeLabels = ["No DR", "Mild", "Moderate", "Severe", "Proliferative"]
@@ -437,6 +440,154 @@ function PatientLoginPanel({
   )
 }
 
+function PatientCasePanel({ patient }: { patient: PatientOut }) {
+  const { token } = useSession()
+  const [info, setInfo] = React.useState<PatientCaseInfo | null>(null)
+  const [notes, setNotes] = React.useState<CaseNote[] | null>(null)
+  const [draft, setDraft] = React.useState("")
+  const [busy, setBusy] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    if (!token) return
+    let active = true
+    patientsApi
+      .caseInfo(token, patient.id)
+      .then((c) => {
+        if (active) setInfo(c)
+      })
+      .catch(() => {
+        // non-fatal: the panel shows "no tracking yet"
+      })
+    return () => {
+      active = false
+    }
+  }, [token, patient.id])
+
+  const imageId = info?.has_case ? info.image_id : null
+  React.useEffect(() => {
+    if (!token || !imageId) return
+    let active = true
+    doctorApi
+      .notes(token, imageId)
+      .then((n) => {
+        if (active) setNotes(n)
+      })
+      .catch((err: Error) => {
+        if (active) setError(err.message)
+      })
+    return () => {
+      active = false
+    }
+  }, [token, imageId])
+
+  async function submit(e: React.FormEvent) {
+    e.preventDefault()
+    const body = draft.trim()
+    if (!body || !token || !imageId) return
+    setBusy(true)
+    setError(null)
+    try {
+      const note = await doctorApi.addNote(token, imageId, body)
+      setNotes((prev) => [...(prev ?? []), note])
+      setDraft("")
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not post the note.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const statusTone =
+    info?.status === "Reviewed"
+      ? "success"
+      : info?.status === "Contacted"
+        ? "outline"
+        : info?.status === "Claimed"
+          ? "warning"
+          : "accent"
+  const bandTone =
+    info?.severity_band === "High"
+      ? "destructive"
+      : info?.severity_band === "Medium"
+        ? "warning"
+        : "success"
+
+  return (
+    <div className="rounded-lg border bg-muted/40 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 text-sm font-medium">
+          <MessageSquareText className="size-4 text-muted-foreground" aria-hidden />
+          Case status
+        </p>
+        {info?.has_case ? (
+          <div className="flex items-center gap-1.5">
+            {info.flagged && <Badge tone="destructive">Flagged</Badge>}
+            <Badge tone={bandTone as "destructive" | "warning" | "success"}>
+              {info.severity_band ?? "—"}
+            </Badge>
+            <Badge tone={statusTone as "accent" | "warning" | "outline" | "success"}>
+              {info.status}
+            </Badge>
+          </div>
+        ) : (
+          <span className="text-xs text-muted-foreground">No tracking yet</span>
+        )}
+      </div>
+
+      {info?.updated_at && (
+        <p className="mt-1 text-xs text-muted-foreground">
+          Updated {new Date(info.updated_at).toLocaleString()}
+        </p>
+      )}
+
+      {imageId && notes !== null && (
+        <>
+          <div className="mt-3 space-y-2">
+            {notes.length === 0 ? (
+              <p className="text-xs text-muted-foreground">No notes from the doctor yet.</p>
+            ) : (
+              <ol className="space-y-2">
+                {notes.map((note) => (
+                  <li key={note.id} className="rounded-md border bg-background p-2.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold">{note.author_name}</span>
+                      <span className="text-[10px] text-muted-foreground">
+                        {new Date(note.created_at).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="mt-1 whitespace-pre-wrap text-xs text-foreground">
+                      {note.body}
+                    </p>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </div>
+
+          <form onSubmit={submit} className="mt-3 flex flex-col gap-2">
+            <textarea
+              rows={2}
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              placeholder="Note for the treating doctor…"
+              className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            />
+            {error && <p className="text-xs text-destructive">{error}</p>}
+            <div className="flex items-center gap-2">
+              <Button type="submit" size="sm" disabled={busy || !draft.trim()}>
+                {busy && <Spinner size="sm" />}
+                <Send className="size-4" />
+                Add note
+              </Button>
+            </div>
+          </form>
+        </>
+      )}
+    </div>
+  )
+}
+
 function ScanWorkflow({ patient }: { patient: PatientOut }) {
   const { token } = useSession()
   const [file, setFile] = React.useState<File | null>(null)
@@ -734,6 +885,7 @@ function WorkerDashboard() {
                 {selected && (
                   <>
                     <PatientLoginPanel patient={selected} onLoginAdded={handleLoginAdded} />
+                    <PatientCasePanel key={selected.id} patient={selected} />
                     <ScanWorkflow key={selected.id} patient={selected} />
                   </>
                 )}

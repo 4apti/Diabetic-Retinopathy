@@ -20,6 +20,13 @@ const roleLabel: Record<string, string> = {
 
 const QUEUE_POLL_MS = 20000
 
+interface NavItem {
+  label: string
+  href: string
+  badge?: number
+  flagged?: number
+}
+
 interface DashboardShellProps {
   children: React.ReactNode
   title: string
@@ -85,7 +92,7 @@ export function DashboardShell({
   }, [toast])
 
   const navItems = (() => {
-    if (!user) return []
+    if (!user) return [] as NavItem[]
     switch (user.role) {
       case "patient":
         return [{ label: "My scans", href: "/dashboard/patient" }]
@@ -95,7 +102,11 @@ export function DashboardShell({
       case "ophthalmologist":
         return [
           {
-            label: "Review queue",
+            label: "Cases",
+            href: "/doctor/dashboard",
+          },
+          {
+            label: "Ophthalmology review",
             href: "/dashboard/doctor",
             badge: queueCount,
             flagged: queueFlagged,
@@ -163,11 +174,11 @@ export function DashboardShell({
               >
                 <LayoutDashboard className="size-4" aria-hidden />
                 {item.label}
-                {"badge" in item && item.badge > 0 && (
+                {item.badge != null && item.badge > 0 && (
                   <span
                     className={cn(
                       "ml-auto inline-flex min-w-5 items-center justify-center rounded-full px-1.5 py-0.5 text-xs font-semibold",
-                      item.flagged > 0
+                      (item.flagged ?? 0) > 0
                         ? "bg-destructive text-destructive-foreground"
                         : "bg-primary text-primary-foreground",
                     )}
