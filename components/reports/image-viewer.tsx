@@ -22,7 +22,7 @@ import {
 import { Spinner } from "@/components/ui/spinner"
 import { fetchGradcamBlobUrl, fetchScanBlobUrl } from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
-import { Maximize2, Minimize2, X, ZoomIn, ZoomOut } from "lucide-react"
+import { Maximize2, Minimize2, RotateCcw, X, ZoomIn, ZoomOut } from "lucide-react"
 import { cn } from "cn"
 
 function LightboxControls({
@@ -30,11 +30,15 @@ function LightboxControls({
   hasHeatmap,
   onModeChange,
   onClose,
+  onToggleFullscreen,
+  isFullscreen,
 }: {
   mode: "scan" | "heatmap"
   hasHeatmap: boolean
   onModeChange: (mode: "scan" | "heatmap") => void
   onClose: () => void
+  onToggleFullscreen: () => void
+  isFullscreen: boolean
 }) {
   const { zoomIn, zoomOut, resetTransform } = useControls()
 
@@ -85,9 +89,19 @@ function LightboxControls({
           type="button"
           onClick={() => resetTransform()}
           aria-label="Reset zoom"
+          title="Reset zoom"
+          className="flex items-center gap-1 rounded-md px-2.5 text-xs font-medium text-white/80 transition-colors hover:bg-white/10 hover:text-white"
+        >
+          <RotateCcw className="size-4" />
+          Reset
+        </button>
+        <button
+          type="button"
+          onClick={onToggleFullscreen}
+          aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
           className="flex size-9 items-center justify-center rounded-md text-white/80 transition-colors hover:bg-white/10 hover:text-white"
         >
-          <Minimize2 className="size-4" />
+          <Maximize2 className="size-4" />
         </button>
       </div>
       <button
@@ -109,6 +123,7 @@ export function ScanImageViewer({
   thumbnailClassName,
   showHeatmap = true,
   label = "Retina scan",
+  defaultMode = "scan",
 }: {
   imageId: string
   token: string
@@ -116,12 +131,15 @@ export function ScanImageViewer({
   thumbnailClassName?: string
   showHeatmap?: boolean
   label?: string
+  defaultMode?: "scan" | "heatmap"
 }) {
   const [scanUrl, setScanUrl] = React.useState<string | null>(null)
   const [heatmapUrl, setHeatmapUrl] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [open, setOpen] = React.useState(false)
   const [mode, setMode] = React.useState<"scan" | "heatmap">("scan")
+  const [isFullscreen, setIsFullscreen] = React.useState(false)
+  const lightboxRef = React.useRef<HTMLDivElement | null>(null)
   const wrapperRef = React.useRef<ReactZoomPanPinchRef | null>(null)
 
   React.useEffect(() => {
@@ -154,11 +172,44 @@ export function ScanImageViewer({
   React.useEffect(() => {
     if (!open) return
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") setOpen(false)
+      if (e.key === "Escape") {
+        if (document.fullscreenElement) {
+          void document.exitFullscreen()
+        } else {
+          setOpen(false)
+        }
+      }
+    }
+    function onFsChange() {
+      setIsFullscreen(!!document.fullscreenElement)
     }
     window.addEventListener("keydown", onKey)
-    return () => window.removeEventListener("keydown", onKey)
+    document.addEventListener("fullscreenchange", onFsChange)
+    return () => {
+      window.removeEventListener("keydown", onKey)
+      document.removeEventListener("fullscreenchange", onFsChange)
+    }
   }, [open])
+
+  React.useEffect(() => {
+    if (!open) return
+    if (defaultMode === "heatmap") setMode("heatmap")
+  }, [open, defaultMode])
+
+  function toggleFullscreen() {
+    const el = lightboxRef.current
+    if (!el) return
+    if (document.fullscreenElement) {
+      void document.exitFullscreen()
+    } else {
+      void el.requestFullscreen()
+    }
+  }
+
+  function openViewer() {
+    setMode("scan")
+    setOpen(true)
+  }
 
   const activeUrl = mode === "heatmap" && heatmapUrl ? heatmapUrl : scanUrl
   const hasHeatmap = showHeatmap && heatmapUrl !== null
@@ -177,10 +228,7 @@ export function ScanImageViewer({
     <>
       <button
         type="button"
-        onClick={() => {
-          setMode("scan")
-          setOpen(true)
-        }}
+        onClick={openViewer}
         aria-label={`Open ${label} viewer`}
         className={cn(
           "relative block w-full cursor-zoom-in overflow-hidden rounded-lg border text-left outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
@@ -205,12 +253,13 @@ export function ScanImageViewer({
 
       {open && (
         <div
+          ref={lightboxRef}
           role="dialog"
           aria-modal="true"
           aria-label={`${label} viewer`}
           className="fixed inset-0 z-50 flex flex-col bg-black/90 backdrop-blur-sm"
           onClick={(e) => {
-            if (e.target === e.currentTarget) setOpen(false)
+            if (e.target === e.currentTarget && !document.fullscreenElement) setOpen(false)
           }}
         >
           <TransformWrapper
@@ -228,6 +277,8 @@ export function ScanImageViewer({
                 hasHeatmap={hasHeatmap}
                 onModeChange={(next) => setMode(next)}
                 onClose={() => setOpen(false)}
+                onToggleFullscreen={toggleFullscreen}
+                isFullscreen={isFullscreen}
               />
               <div className="flex min-h-0 flex-1 items-center justify-center overflow-hidden">
                 {activeUrl ? (

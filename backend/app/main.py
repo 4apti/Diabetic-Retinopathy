@@ -38,6 +38,8 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE screening_reports ADD COLUMN submitting_worker VARCHAR",
             "ALTER TABLE screening_reports ADD COLUMN scan_date DATETIME",
             "ALTER TABLE screening_reports ADD COLUMN eye_laterality VARCHAR",
+            "ALTER TABLE screening_reports ADD COLUMN image_quality VARCHAR",
+            "ALTER TABLE screening_reports ADD COLUMN quality_score FLOAT",
         ):
             try:
                 conn.execute(text(stmt))

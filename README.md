@@ -135,7 +135,8 @@ The clinical report templates are English; Phase 4's patient summaries add
 Hindi + voice on top of the template engine, decoupled from it.
 
 **Report export**: copy/print from the browser via the in-report print button
-and a print stylesheet (PDF export is a planned stretch goal).
+and a print stylesheet; the dedicated medical report adds an A4 PDF output
+(Save as PDF) with nav/shell hidden.
 
 ## Phase 4 — Telemedicine & the ophthalmologist review loop
 
@@ -278,6 +279,36 @@ claim/contact/notes workflow are untouched):
   and macula signals are computed from real detections; a one-shot
   `app/refresh_reports.py` backfills boxes and regenerates every existing report.
 
+### Phase 4 Part B — Professional medical report
+
+The doctor case detail now renders a **single-page professional medical report**
+(document section layout, not a dashboard) built strictly from real AI output:
+
+- **13 numbered sections** on one printable page: Patient Information →
+  Examination (Scan ID, date, eye laterality, modality, quality gate result) →
+  Fundus Image Review (labelled **Figure 1** original + **Figure 2** AI
+  explainability) → Findings (optic disc / macula / vasculature / background,
+  lesion lines, region attention) → Detected Lesions table (per-type counts +
+  mean confidence) → ICDR Classification (grade, label, classifier confidence,
+  basis) → Dual-engine Consistency Check → Impression → Observations →
+  Recommendation → AI Analysis Summary → Report Status (Report ID
+  `NS-<scan>`, Generated timestamp, generation method, clinical sign-off) →
+  AI Disclaimer text embedded in the report itself.
+- **Report ID + generated timestamp** are part of the report bundle, and the
+  screening quality snapshot (`image_quality`, `quality_score`) is persisted on
+  the report row so the printed document never changes retroactively.
+- **Print / PDF report**: a toolbar button invokes an A4 print stylesheet that
+  hides the entire app shell and outputs only the medical report (clean margins,
+  no-nav, section-safe page breaks). Browser "Save as PDF" gives a file directly.
+- **In-page figures**: both figures open the shared in-tab lightbox (zoom / pan
+  / reset / fullscreen via the Fullscreen API, Esc closes) — never a new tab.
+- The review workflow (claim → contact → sign-off, notes thread) remains on the
+  same page in a collapsible section hidden from print output.
+
+The structured bundle is served at `structured_findings.medical_report` in the
+existing report API; the patient-visible report panel (Phase 4 Part A universal
+format) is unchanged.
+
 ## Provenance & clinical disclaimer
 
 Every result view shows exactly what was run (model, training source, val QWK,
@@ -320,7 +351,6 @@ gate is a listed stretch goal.
 - **Retraining feedback loop**: `Revised` sign-offs are preserved as labels and
   are the intended signal for classifier fine-tuning.
 - **Notifications**: push / email / SMS out of band (polling covers the demo).
-- **PDF export** of reports (print stylesheet exists).
 
 ## Project layout
 

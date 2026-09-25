@@ -125,6 +125,8 @@ class ScreeningReport(Base):
     submitting_worker = Column(String, nullable=True)  # ASHA worker full name
     scan_date = Column(DateTime, nullable=True)  # date of scan (analyzed time)
     eye_laterality = Column(String, nullable=True)  # OD | OS — currently not captured
+    image_quality = Column(String, nullable=True)  # acceptable | poor | pending snapshot
+    quality_score = Column(Float, nullable=True)  # focus score snapshot
 
     finding = relationship("AIFinding", back_populates="report")
 

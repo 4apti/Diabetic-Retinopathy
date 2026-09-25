@@ -156,6 +156,11 @@ export interface ReportHeader {
   submitting_worker: string | null
   scan_date: string | null
   eye_laterality: string | null
+  image_quality?: string | null
+  quality_score?: number | null
+  report_id?: string | null
+  generated_at?: string | null
+  scan_id?: string | null
 }
 
 export interface RegionAnalysis {
@@ -167,6 +172,78 @@ export interface RegionAnalysis {
   macula_attention: boolean
   exudates_near_macula: number
   spread_evenly: boolean
+}
+
+export interface MedicalReportLesionLine {
+  label: string
+  count_text: string
+  confidence_text: string
+}
+
+export interface MedicalReportLesionTableRow {
+  type: string
+  label: string
+  count: number
+  confidence: number | null
+}
+
+export interface MedicalReport {
+  report_id: string
+  generated_at: string | null
+  patient: {
+    name: string
+    patient_id: string
+    age: string
+    gender: string
+    referring_phc: string
+    submitting_worker: string
+  }
+  examination: {
+    scan_id: string
+    scan_date: string | null
+    eye: string
+    modality: string
+    quality: string
+  }
+  findings: {
+    optic_disc: string
+    macula: string
+    vasculature: string
+    background: string
+    lesion_lines: MedicalReportLesionLine[]
+    lesion_note: string | null
+    region_attention: string
+  }
+  lesion_table: MedicalReportLesionTableRow[]
+  classification: {
+    grade: number | null
+    label: string
+    basis: string
+    icdr_confidence: number | null
+    total_lesion_count: number
+  }
+  consistency: {
+    headline: string
+    status: string
+    discrepant: boolean
+  }
+  impression: string
+  observations: string[]
+  recommendation: string
+  ai_analysis_summary: {
+    classifier: string
+    detector: string
+    grade: string
+    consistency: string
+    region_analysis: string
+  }
+  report_status: {
+    report_id: string
+    generated_at: string
+    method: string
+    model_version: string
+  }
+  disclaimer: string
 }
 
 export interface StructuredFindings {
@@ -186,6 +263,7 @@ export interface StructuredFindings {
   observations?: string[]
   recommendation?: string | null
   disclaimer?: string | null
+  medical_report?: MedicalReport | null
 }
 
 export interface ScreeningReport {

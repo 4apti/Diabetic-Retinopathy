@@ -36,6 +36,14 @@ def _entries_have_boxes(lesion_list: str) -> bool:
     return any(isinstance(item.get("boxes"), list) for item in raw)
 
 
+def _populate_image_quality(db, report, upload) -> None:
+    """Backfill the quality snapshot columns from the source upload row."""
+    if report.image_quality is None:
+        report.image_quality = upload.quality_status if upload is not None else None
+    if report.quality_score is None:
+        report.quality_score = upload.quality_score if upload is not None else None
+
+
 def _is_demo(upload: ImageUpload, provenance: str) -> bool:
     demo_marker = "(demo seed)" in provenance or "demo seed" in provenance.lower()
     path_marker = bool(upload.file_path and "demo_samples" in upload.file_path.replace("\\", "/"))
@@ -64,16 +72,19 @@ def _enrich_boxes(db, finding: AIFinding, upload: ImageUpload) -> bool:
         iw, ih = src.size
 
     boxes_by_type: dict[str, list[list[float]]] = defaultdict(list)
+    confs_by_type: dict[str, list[float]] = defaultdict(list)
     for det in res.detections:
         x1, y1, x2, y2 = det.box
         boxes_by_type[det.label].append(
             [round(x1 / iw, 4), round(y1 / ih, 4), round(x2 / iw, 4), round(y2 / ih, 4)]
         )
+        confs_by_type[det.label].append(det.confidence)
     lesion_list = [
         {
             "type": label,
             "count": len(boxes_by_type[label]),
             "boxes": boxes_by_type[label],
+            "confidence": [round(c, 4) for c in confs_by_type[label]],
         }
         for label in sorted(boxes_by_type)
     ]
@@ -91,6 +102,7 @@ def main() -> None:
         for col in (
             "patient_id", "patient_name", "patient_age", "patient_gender",
             "referring_phc", "submitting_worker", "scan_date", "eye_laterality",
+            "image_quality", "quality_score",
         ):
             db.execute(text(f"ALTER TABLE screening_reports ADD COLUMN {col} TEXT"))
             db.commit()
@@ -116,6 +128,8 @@ def main() -> None:
 
         report = ensure_report(db, finding, force=True)
         if report is not None:
+            _populate_image_quality(db, report, upload)
+            db.commit()
             regenerated += 1
             if report.gradcam_path:
                 heatmapped += 1

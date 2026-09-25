@@ -97,6 +97,17 @@ STANDARD_DISCLAIMER = (
     "clinical evaluation and management."
 )
 
+# Closing disclaimer for the professional medical report — exact wording
+# mandated by the product spec (universal diagnostic-report format).
+MEDICAL_DISCLAIMER = (
+    "This report contains findings generated with the assistance of artificial "
+    "intelligence from the submitted fundus image. The AI output is intended to "
+    "support clinical decision-making and does not replace examination, "
+    "diagnosis, or treatment by a qualified ophthalmologist. Final clinical "
+    "interpretation and patient management should be determined by the treating "
+    "clinician."
+)
+
 EMBEDDED_DISCLAIMER = STANDARD_DISCLAIMER  # kept as an alias for compat
 
 # Hard-exudate load considered "heavy" for the macular-oedema risk note.
@@ -152,8 +163,9 @@ def model_signature(clf) -> str:
 
 
 def _lesion_entries(finding: AIFinding) -> list[dict]:
-    """Parse the stored lesion list, tolerant of both {type,count} and the
-    richer {type,count,boxes} format persisted since the Phase-4-A fix."""
+    """Parse the stored lesion list, tolerant of {type,count}, richer
+    {type,count,boxes} and {type,count,boxes,confidence} formats. Whenever
+    boxes exist the mean detector confidence per type is derived from them."""
     try:
         raw = json.loads(finding.lesion_list or "[]")
     except json.JSONDecodeError:
@@ -162,12 +174,20 @@ def _lesion_entries(finding: AIFinding) -> list[dict]:
     for item in raw:
         ltype = str(item.get("type", "unknown"))
         boxes = item.get("boxes")
-        if isinstance(boxes, list):
+        if isinstance(boxes, list) and boxes:
             count = len(boxes)
         else:
             count = int(item.get("count", 0))
             boxes = None
-        entries.append({"type": ltype, "count": count, "boxes": boxes})
+        confs = item.get("confidence")
+        mean_conf = None
+        if isinstance(confs, list) and confs:
+            valid = [float(c) for c in confs if isinstance(c, (int, float))]
+            if valid:
+                mean_conf = round(sum(valid) / len(valid), 4)
+        entries.append(
+            {"type": ltype, "count": count, "boxes": boxes, "confidence": mean_conf}
+        )
     return entries
 
 
@@ -178,6 +198,293 @@ def build_lesion_breakdown(entries: list[dict]) -> list[dict]:
     for e in entries:
         counts[e["type"]] += e["count"]
     return [{"type": t, "count": counts.get(t, 0)} for t in LESION_TYPES]
+
+
+def _mean_confidence_by_type(entries: list[dict]) -> dict[str, Optional[float]]:
+    """Mean detector confidence per lesion type from the stored boxes/conf. A
+    type with boxes but no recorded confidences yields None (reports "Not
+    available" honestly instead of fabricating a number)."""
+    scores: dict[str, list[float]] = defaultdict(list)
+    for e in entries:
+        if e.get("count", 0) <= 0:
+            continue
+        if e.get("boxes") and e.get("confidence") is not None:
+            scores[e["type"]].append(e["confidence"])
+    return {t: round(sum(v) / len(v), 4) for t, v in scores.items() if v}
+
+
+def _lesion_truncated_note(counts: dict[str, int]) -> Optional[str]:
+    """A single-line anatomical note when the tracker ran but no lesions were
+    detected — used verbatim inside the Findings tables (kept explicitly
+    separate from the classifier conclusions in the Assessment)."""
+    if sum(counts.values()) > 0:
+        return None
+    return "No diabetic-retinopathy lesions detected by the lesion detector on this image."
+
+
+def build_medical_report(
+    struct: dict,
+    header: dict,
+    finding: AIFinding,
+    region: Optional[dict],
+    entries: list[dict],
+    upload=None,
+) -> dict:
+    """Assemble the professional medical report content bundle (universal
+    diagnostic-report format). Pure organization of existing AI output — no new
+    inference. Missing data is surfaced as "Not Available" / "Unable to assess
+    reliably from the available image." rather than suppressed."""
+
+    def _na() -> str:
+        return "Not Available"
+
+    def _count_line(t: str, counts: dict[str, int]) -> str:
+        noun = LESION_PRINT[t].replace(" / cotton-wool spots", "")
+        return f"{counts.get(t, 0)} {noun.lower()} detected."
+
+    def _conf_fmt(t: str, conf_by_type: dict[str, Optional[float]]) -> str:
+        conf = conf_by_type.get(t)
+        if conf is None:
+            return "Not Available"
+        return f"{conf:.2f} (mean detection confidence)"
+
+    grade = struct.get("icdr_grade")
+    label = struct.get("icdr_grade_label") or "Unknown"
+    consistency = struct.get("consistency_status")
+    flagged_reason = struct.get("flagged_reason")
+    counts = {b["type"]: b["count"] for b in struct.get("lesion_breakdown", [])}
+    conf_by_type = _mean_confidence_by_type(entries)
+
+    # -- Anatomical sections -------------------------------------------------
+    disc, macula, vasculature, background = "Not Available", "Not Available", "Not Available", "Not Available"
+    region_attention_text = "No concentrated region of AI attention was detected on this image."
+    if grade is not None:
+        if grade == 0:
+            disc = "No abnormalities detected by the AI-assisted analysis — the optic disc appears unremarkable."
+            macula = "No diabetic-retinopathy abnormalities detected by the AI-assisted analysis."
+            vasculature = "No diabetic-retinopathy abnormalities detected by the AI-assisted analysis."
+            background = (
+                "No microaneurysms, dot-blot hemorrhages or lipid exudates were detected by the "
+                "AI-assisted lesion analysis; the background retina appears unremarkable."
+            )
+        else:
+            disc = "No specific abnormality of the optic disc identified on this image by the AI-assisted analysis."
+            macula = (
+                "Diabetic retinopathy lesions may involve the macular region. Although edema cannot "
+                "be reliably assessed on color fundus photography, macular involvement is possible "
+                "and warrants clinical correlation."
+            )
+            vasculature = (
+                "May be abnormal given the severity grade. Neovascularization, venous beading or IRMA "
+                "cannot be confirmed on a color fundus photo and require clinical assessment."
+            )
+            background = (
+                "Background retinopathy — multiple microaneurysms, hemorrhages and exudates identified "
+                "by the AI-assisted lesion analysis (see lesion table)."
+            )
+    if region:
+        parts = []
+        if region.get("cluster_count"):
+            parts.append(
+                f"Top AI attention concentrated in {region.get('cluster_count')} region(s)."
+            )
+        if region.get("description"):
+            parts.append(region["description"])
+        if region.get("macula_attention"):
+            parts.append(
+                "AI attention includes the macular zone — correlation with dilated clinical examination advised."
+            )
+        if region.get("used_optic_disc"):
+            parts.append(
+                "Anatomic position referenced to the detected optic-disc location."
+            )
+        else:
+            parts.append(
+                "Anatomic reference (optic disc) could not be localized; attention positions are image-relative."
+            )
+        region_attention_text = " ".join(parts)
+
+    # -- Examination / quality ----------------------------------------------
+    eff_quality = None
+    if upload is not None:
+        eff_quality = getattr(upload, "quality_status", None) or None
+    quality_status = header.get("image_quality") or eff_quality or "pending"
+    quality_score = header.get("quality_score")
+    if quality_score is None and upload is not None:
+        quality_score = getattr(upload, "quality_score", None)
+    if quality_status == "acceptable":
+        quality_line = (
+            f"Image quality: acceptable (focus score {quality_score:.0f})."
+            if quality_score is not None else "Image quality: acceptable."
+        )
+    elif quality_status == "poor":
+        quality_line = (
+            f"Image quality: poor (focus score {quality_score:.0f}). The image is insufficiently "
+            "reliable for AI-assisted assessment; interpretation is limited."
+            if quality_score is not None else
+            "Image quality: poor — insufficiently reliable for AI-assisted assessment; interpretation is limited."
+        )
+    else:
+        quality_line = "Image quality: not assessed."
+
+    # -- Consistency / status ------------------------------------------------
+    if consistency in (FLAGGED, LOW_LESION_EVIDENCE):
+        discrepant = "Discrepant — Clinical Review Required."
+    else:
+        discrepant = "Not applicable — no discrepancy flagged."
+    if consistency == "CONSISTENT":
+        consistency_headline = "Consistent"
+        consistency_status = "Both engines were concordant on the severity grade and the detected lesion load."
+    elif consistency == FLAGGED:
+        consistency_headline = "Discrepant — Clinical Review Required."
+        consistency_status = (
+            "Predicted severity grade and detected lesion load do not align. The finding requires "
+            "clinical review before any action."
+        )
+    elif consistency == LOW_LESION_EVIDENCE:
+        consistency_headline = "Discrepant — Clinical Review Required."
+        consistency_status = (
+            "A moderate-or-higher severity was predicted despite few or no lesions detected — possible "
+            "detector miss. Clinical review required."
+        )
+    elif consistency == CLASSIFIER_ONLY:
+        consistency_headline = "Classifier-only Analysis"
+        consistency_status = (
+            "Only the severity classifier was available for this scan; no lesion detector ran. "
+            "Interpret with caution."
+        )
+    else:
+        consistency_headline = str(consistency or _na())
+        consistency_status = _na()
+    if flagged_reason:
+        consistency_status = f"{consistency_status} {flagged_reason.capitalize()}."
+
+    # -- Recommendation -------------------------------------------------------
+    rec_parts = []
+    if struct.get("recommendation"):
+        rec_parts.append(struct["recommendation"])
+    if struct.get("possible_macular_edema"):
+        rec_parts.append(
+            "Given the possible macular-edema risk, an optical coherence tomography (OCT) assessment is advisable."
+        )
+
+    # -- AI analysis summary ---------------------------------------------------
+    classifier_prov, detector_prov = _na(), _na()
+    if finding.model_provenance:
+        try:
+            prov = json.loads(finding.model_provenance)
+        except (ValueError, TypeError):
+            prov = {}
+        clf = prov.get("classifier")
+        if isinstance(clf, dict):
+            classifier_prov = clf.get("model") or _na()
+        det = prov.get("detector")
+        if isinstance(det, str):
+            detector_prov = det
+        elif isinstance(det, dict):
+            detector_prov = det.get("option") or _na()
+
+    # -- Report status (sign-off is merged from case detail on the client) ----
+    generated = header.get("generated_at")
+    if isinstance(generated, str):
+        generated_line = generated
+    elif isinstance(generated, datetime):
+        generated_line = generated.strftime("%d %b %Y, %I:%M %p")
+    else:
+        generated_line = _na()
+
+    scan_date = header.get("scan_date")
+    if isinstance(scan_date, datetime):
+        scan_date_iso = scan_date.isoformat()
+    elif isinstance(scan_date, str):
+        scan_date_iso = scan_date
+    else:
+        scan_date_iso = None
+
+    discrepancies = bool(consistency in (FLAGGED, LOW_LESION_EVIDENCE))
+
+    return {
+        "report_id": header.get("report_id") or f"NS-{ (finding.image_id or '')[:8].upper() }",
+        "generated_at": generated_line,
+        "patient": {
+            "name": header.get("patient_name") or _na(),
+            "patient_id": str(header.get("patient_id")) if header.get("patient_id") is not None else _na(),
+            "age": str(header.get("patient_age")) if header.get("patient_age") is not None else _na(),
+            "gender": header.get("patient_gender") or _na(),
+            "referring_phc": header.get("referring_phc") or _na(),
+            "submitting_worker": header.get("submitting_worker") or _na(),
+        },
+        "examination": {
+            "scan_id": header.get("scan_id") or (finding.image_id or _na()),
+            "scan_date": scan_date_iso,
+            "eye": header.get("eye_laterality") or "Not captured",
+            "modality": "Color fundus photography (screening)",
+            "quality": quality_line,
+        },
+        "findings": {
+            "optic_disc": disc,
+            "macula": macula,
+            "vasculature": vasculature,
+            "background": background,
+            "lesion_lines": [
+                {
+                    "label": LESION_PRINT[t],
+                    "count_text": _count_line(t, counts),
+                    "confidence_text": _conf_fmt(t, conf_by_type),
+                }
+                for t in LESION_TYPES
+            ],
+            "lesion_note": _lesion_truncated_note(counts),
+            "region_attention": region_attention_text,
+        },
+        "lesion_table": [
+            {
+                "type": t,
+                "label": LESION_PRINT[t],
+                "count": counts.get(t, 0),
+                "confidence": conf_by_type.get(t),
+            }
+            for t in LESION_TYPES
+        ],
+        "classification": {
+            "grade": grade,
+            "label": label,
+            "basis": struct.get("grade_basis") or _na(),
+            "icdr_confidence": finding.icdr_confidence,
+            "total_lesion_count": struct.get("total_lesion_count", 0),
+        },
+        "consistency": {
+            "headline": consistency_headline,
+            "status": consistency_status,
+            "discrepant": discrepancies,
+        },
+        "impression": (
+            f"AI-assisted assessment — {label}{' (ICDR grade ' + str(grade) + ')' if grade is not None else ''}. "
+            f"{discrepant if consistency in (FLAGGED, LOW_LESION_EVIDENCE) else 'No discrepancy flagged between the two AI engines.'}"
+        ),
+        "observations": struct.get("observations") or ["No abnormal findings of note were detected."],
+        "recommendation": " ".join(rec_parts) or (
+            "An ophthalmology review is advised."
+        ),
+        "ai_analysis_summary": {
+            "classifier": classifier_prov,
+            "detector": detector_prov,
+            "grade": f"{label} (ICDR grade {grade})" if grade is not None else _na(),
+            "consistency": consistency or _na(),
+            "region_analysis": (
+                "Computed from the actual Grad-CAM heatmap."
+                if (region and region.get("cluster_count") is not None)
+                else "Region analysis unavailable for this scan."
+            ),
+        },
+        "report_status": {
+            "report_id": header.get("report_id") or f"NS-{ (finding.image_id or '')[:8].upper() }",
+            "generated_at": generated_line,
+            "method": "AI-assisted template report",
+            "model_version": finding.model_version or _na(),
+        },
+        "disclaimer": MEDICAL_DISCLAIMER,
+    }
 
 
 def _grade_basis_note(
@@ -333,11 +640,14 @@ def build_observations(
 def build_structured_findings(
     finding: AIFinding,
     region: Optional[dict] = None,
+    header: Optional[dict] = None,
+    upload=None,
 ) -> dict:
     """Restructure the Phase 2 ``ai_findings`` row into a clinician-readable
     object (no new AI — just organizing what already exists). Since the Phase
     4-A fix this includes the full lesion breakdown, the grade driver statement,
-    the macular-oedema risk and the computed heatmap region analysis."""
+    the macular-oedema risk and the computed heatmap region analysis. The
+    professional MedicalReport bundle is included as ``medical_report``."""
     entries = _lesion_entries(finding)
     breakdown = build_lesion_breakdown(entries)
     total = sum(b["count"] for b in breakdown)
@@ -407,6 +717,27 @@ def build_structured_findings(
         "observations": observations,
         "recommendation": rec,
         "disclaimer": STANDARD_DISCLAIMER,
+        "medical_report": build_medical_report(
+            {
+                "icdr_grade": grade,
+                "icdr_grade_label": label,
+                "lesion_breakdown": breakdown,
+                "total_lesion_count": total,
+                "consistency_status": finding.consistency_status,
+                "flagged_reason": flagged_reason,
+                "grade_basis": _grade_basis_note(
+                    grade, breakdown, finding.consistency_status
+                ),
+                "possible_macular_edema": macula["possible_macular_edema"],
+                "recommendation": rec,
+                "observations": observations,
+            },
+            header or {},
+            finding,
+            region,
+            entries,
+            upload=upload,
+        ),
     }
 
 
@@ -608,9 +939,17 @@ def ensure_report(
         "submitting_worker": worker.full_name if worker is not None else None,
         "scan_date": (upload.uploaded_at if upload is not None else None),
         "eye_laterality": None,  # OD/OS is not captured by the Phase 1 flow yet
+        # Professional medical-report fields.
+        "report_id": f"NS-{finding.image_id[:8].upper()}",
+        "generated_at": datetime.utcnow(),
+        "scan_id": finding.image_id,
+        "image_quality": upload.quality_status if upload is not None else None,
+        "quality_score": upload.quality_score if upload is not None else None,
     }
 
-    structured = build_structured_findings(finding, region=region)
+    structured = build_structured_findings(
+        finding, region=region, header=header, upload=upload
+    )
 
     report_text = generate_report_text(
         patient_name=header["patient_name"] or "Patient",
@@ -638,6 +977,8 @@ def ensure_report(
             submitting_worker=header["submitting_worker"],
             scan_date=header["scan_date"],
             eye_laterality=header["eye_laterality"],
+            image_quality=header.get("image_quality"),
+            quality_score=header.get("quality_score"),
         )
         db.add(report)
     else:
@@ -656,6 +997,8 @@ def ensure_report(
         report.submitting_worker = header["submitting_worker"]
         report.scan_date = header["scan_date"]
         report.eye_laterality = header["eye_laterality"]
+        report.image_quality = header.get("image_quality")
+        report.quality_score = header.get("quality_score")
 
     try:
         db.commit()

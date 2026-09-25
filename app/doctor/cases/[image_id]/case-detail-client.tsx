@@ -7,16 +7,17 @@ import {
   ArrowLeft,
   CheckCircle2,
   ClipboardList,
+  Compass,
   MessageSquareText,
   Phone,
+  Printer,
   Send,
   Stethoscope,
 } from "lucide-react"
 
 import { DashboardShell } from "@/components/dashboard/dashboard-shell"
 import { RequireRole } from "@/components/dashboard/route-guard"
-import { ScreeningReportPanel } from "@/components/reports/report-panel"
-import { ScanImageViewer } from "@/components/reports/image-viewer"
+import { MedicalReportPrint } from "@/components/reports/medical-report"
 import {
   Card,
   CardContent,
@@ -358,33 +359,44 @@ function CaseDetailView() {
 
       {detail ? (
         <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="font-heading text-xl font-bold">
-                {detail.patient_name}
-                <span className="ml-2 font-normal text-muted-foreground">
-                  #{detail.image_id.slice(0, 8)}
-                </span>
-              </h2>
-              <p className="text-sm text-muted-foreground">
-                {[detail.patient_age ? `${detail.patient_age} yrs` : null, detail.patient_gender, detail.phc]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </p>
-            </div>
+          {/* Workflow toolbar — kept out of the printed report. */}
+          <div className="no-print flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-1.5">
               <Badge tone={BAND_TONE[detail.severity_band]}>{detail.severity_band}</Badge>
               <Badge tone={STATUS_TONE[detail.status]}>{detail.status}</Badge>
               {detail.flagged && <Badge tone="destructive">Flagged for review</Badge>}
             </div>
+            <Button variant="outline" size="sm" onClick={() => window.print()}>
+              <Printer className="size-4" aria-hidden />
+              Print / PDF report
+            </Button>
           </div>
 
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div className="flex flex-col gap-4">
+          {/* The professional medical report: primary content of the page. */}
+          <div className="relative-block">
+            <MedicalReportPrint
+              imageId={detail.image_id}
+              token={token ?? ""}
+              signOff={detail.sign_off}
+            />
+          </div>
+
+          {/* Review workflow controls — subsidiary, collapsible, no-print. */}
+          <details
+            className="no-print mt-2 rounded-lg border bg-muted/30 p-3"
+            open={detail.status !== "Reviewed"}
+          >
+            <summary className="cursor-pointer text-sm font-medium">
+              Review workflow &amp; collaboration
+            </summary>
+            <div className="mt-3 grid gap-4 lg:grid-cols-3">
               <ContactPanel phone={detail.phone} />
               <Card className="gap-0">
                 <CardHeader>
-                  <CardTitle className="text-base">Progress</CardTitle>
+                  <CardTitle className="flex items-center gap-2 text-base">
+                    <Compass className="size-4 text-primary" aria-hidden />
+                    Progress
+                  </CardTitle>
                   <CardDescription>
                     {detail.worker_name
                       ? `Registered by ASHA worker ${detail.worker_name}`
@@ -396,28 +408,19 @@ function CaseDetailView() {
                   <CaseActions detail={detail} onChanged={(next) => setDetail(next)} />
                 </CardContent>
               </Card>
+              <div className="lg:col-span-1">
+                <SignOffSummary detail={detail} />
+              </div>
             </div>
-
-            <div className="flex flex-col gap-4 lg:col-span-2">
-              <ScanImageViewer
-                imageId={detail.image_id}
-                token={token ?? ""}
-                label={`${detail.patient_name} — retina scan`}
-              />
-              <ScreeningReportPanel
-                imageId={detail.image_id}
-                token={token ?? ""}
-                variant="clinical"
+            <div className="mt-4">
+              <NotesThread
+                detail={detail}
+                onNoteAdded={(note) =>
+                  setDetail((prev) => (prev ? { ...prev, notes: [...prev.notes, note] } : prev))
+                }
               />
             </div>
-          </div>
-
-          <NotesThread
-            detail={detail}
-            onNoteAdded={(note) =>
-              setDetail((prev) => (prev ? { ...prev, notes: [...prev.notes, note] } : prev))
-            }
-          />
+          </details>
         </div>
       ) : (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -425,6 +428,36 @@ function CaseDetailView() {
         </div>
       )}
     </DashboardShell>
+  )
+}
+
+function SignOffSummary({ detail }: { detail: CaseDetail }) {
+  const signOff = detail.sign_off
+  if (!signOff) return null
+  return (
+    <Card className="gap-0">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <CheckCircle2 className="size-4 text-primary" aria-hidden />
+          Clinical sign-off
+        </CardTitle>
+        <CardDescription>{signOff.decision}</CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-1 text-sm text-muted-foreground">
+        {signOff.signed_at && (
+          <p>
+            Signed on {new Date(signOff.signed_at).toLocaleDateString()} by ophthalmologist #
+            {signOff.ophthalmologist_id}
+          </p>
+        )}
+        {signOff.revised_grade != null && (
+          <p>Revised ICDR grade: {signOff.revised_grade}</p>
+        )}
+        {signOff.doctor_notes && (
+          <p className="mt-1 whitespace-pre-wrap text-foreground">{signOff.doctor_notes}</p>
+        )}
+      </CardContent>
+    </Card>
   )
 }
 

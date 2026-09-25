@@ -125,3 +125,53 @@
     white-space: pre-wrap !important;
   }
 }
+
+/* Professional medical report document — the case detail page renders the
+   report in-place as its primary content. When the Print action fires, the
+   entire surrounding dashboard (shell header, sidebar, workflow panels) is
+   masked so the printer and PDF receive ONLY the medical report document. */
+@page {
+  size: A4;
+  margin: 14mm;
+}
+
+@media print {
+  html {
+    background: white !important;
+  }
+  body {
+    background: white !important;
+  }
+  body > * {
+    visibility: hidden !important;
+  }
+  .medical-report {
+    visibility: visible !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    padding: 0.25rem !important;
+    color: #0f172a !important;
+  }
+  .medical-report section,
+  .medical-report figure,
+  .medical-report table,
+  .medical-report .medical-report-avoid-break {
+    break-inside: avoid;
+  }
+  .medical-report h2,
+  .medical-report h3 {
+    page-break-after: avoid;
+  }
+  header[class*="sticky"],
+  nav[aria-label="Dashboard"] {
+    display: none !important;
+  }
+  img,
+  svg {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
